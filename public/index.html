@@ -1,0 +1,179 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Career Ops</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      background: #0d1117; color: #e6edf3;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      font-size: 14px; padding: 24px;
+    }
+    h1 { font-size: 20px; font-weight: 600; color: #58a6ff; margin-bottom: 8px; }
+    #status-bar { color: #8b949e; font-size: 13px; margin-bottom: 16px; }
+    table { width: 100%; border-collapse: collapse; }
+    thead th {
+      text-align: left; padding: 8px 12px;
+      background: #161b22; color: #8b949e;
+      font-weight: 500; border-bottom: 1px solid #30363d;
+    }
+    tbody tr { border-bottom: 1px solid #21262d; }
+    tbody tr:hover { background: #161b22; }
+    td { padding: 10px 12px; vertical-align: top; }
+    .company { font-weight: 600; }
+    .role    { color: #8b949e; font-size: 13px; }
+    .date    { color: #8b949e; font-size: 12px; }
+    .score { font-weight: 600; }
+    .score.high { color: #3fb950; }
+    .score.mid  { color: #d29922; }
+    .score.low  { color: #f85149; }
+    .status-badge {
+      display: inline-block; padding: 2px 8px;
+      border-radius: 12px; font-size: 12px;
+      background: #21262d; color: #8b949e; border: 1px solid #30363d;
+    }
+    .btn {
+      background: #238636; color: #fff; border: none;
+      padding: 5px 14px; border-radius: 6px;
+      cursor: pointer; font-size: 13px; white-space: nowrap;
+    }
+    .btn:hover { background: #2ea043; }
+    .btn:disabled { background: #21262d; color: #8b949e; cursor: not-allowed; }
+    .progress-cell { min-width: 260px; }
+    .stage-log { font-size: 12px; color: #8b949e; margin-top: 4px; }
+    .stage-log .done    { color: #3fb950; }
+    .stage-log .error   { color: #f85149; }
+    .stage-log .warning { color: #d29922; }
+    .downloads { margin-top: 6px; }
+    .downloads a { color: #58a6ff; text-decoration: none; margin-right: 10px; font-size: 13px; }
+  </style>
+</head>
+<body>
+  <h1>Career Ops</h1>
+  <div id="status-bar">Loading jobs...</div>
+  <table id="jobs-table">
+    <thead>
+      <tr>
+        <th>Company / Role</th>
+        <th>Score</th>
+        <th>Status</th>
+        <th>Updated</th>
+        <th>Action</th>
+        <th class="progress-cell">Progress</th>
+      </tr>
+    </thead>
+    <tbody id="jobs-body"></tbody>
+  </table>
+
+  <script src="/socket.io/socket.io.js"></script>
+  <script>
+    const socket = io();
+    const jobRows = {};
+
+    const STAGE_LABELS = {
+      'lm-studio': 'LM Studio', 'ai': 'Claude AI', 'polish': 'Polish',
+      'docx': 'DOCX', 'pdf': 'PDF', 'warning': 'Warning', 'error': 'Error',
+    };
+
+    socket.on('progress', ({ jobId, stage, status, message }) => {
+      const row = jobRows[jobId];
+      if (!row) return;
+      const log = row.querySelector('.stage-log');
+      const label = STAGE_LABELS[stage] || stage;
+      const text = message ? `${label}: ${esc(message)}` : `${label}: ${esc(status)}`;
+      const cls = status === 'done' ? 'done'
+                : status === 'failed' ? 'error'
+                : stage === 'warning' ? 'warning' : '';
+      log.innerHTML += `<div class="${cls}">${text}</div>`;
+    });
+
+    socket.on('complete', ({ jobId, docxUrl, pdfUrl }) => {
+      const row = jobRows[jobId];
+      if (!row) return;
+      const btn = row.querySelector('button');
+      btn.disabled = false;
+      btn.textContent = 'Regenerate';
+      row.querySelector('.downloads').innerHTML =
+        `<a href="${esc(docxUrl)}" download>Download .docx</a>` +
+        `<a href="${esc(pdfUrl)}" download>Download .pdf</a>`;
+    });
+
+    async function loadJobs() {
+      const bar = document.getElementById('status-bar');
+      try {
+        const res = await fetch('/api/jobs');
+        const jobs = await res.json();
+        bar.textContent = `${jobs.length} jobs loaded`;
+        renderJobs(jobs);
+      } catch (e) {
+        bar.textContent = 'Failed to load: ' + e.message;
+      }
+    }
+
+    function scoreClass(s) {
+      if (s == null) return '';
+      return s >= 4 ? 'high' : s >= 2.5 ? 'mid' : 'low';
+    }
+
+    function renderJobs(jobs) {
+      const tbody = document.getElementById('jobs-body');
+      tbody.innerHTML = '';
+      for (const job of jobs) {
+        const tr = document.createElement('tr');
+        const scoreVal = job.score != null ? Number(job.score).toFixed(1) : '—';
+        const dateVal = job.date_updated ? job.date_updated.slice(0, 10) : '—';
+        tr.innerHTML = `
+          <td>
+            <div class="company">${esc(job.company)}</div>
+            <div class="role">${esc(job.title)}</div>
+          </td>
+          <td><span class="score ${scoreClass(job.score)}">${scoreVal}</span></td>
+          <td><span class="status-badge">${esc(job.status)}</span></td>
+          <td><span class="date">${dateVal}</span></td>
+          <td><button class="btn" data-id="${esc(job.id)}">Generate Resume</button></td>
+          <td class="progress-cell">
+            <div class="stage-log"></div>
+            <div class="downloads"></div>
+          </td>`;
+        jobRows[job.id] = tr;
+        tbody.appendChild(tr);
+      }
+      tbody.querySelectorAll('button[data-id]').forEach(btn => {
+        btn.addEventListener('click', () => generateResume(btn.dataset.id, btn));
+      });
+    }
+
+    async function generateResume(jobId, btn) {
+      btn.disabled = true;
+      btn.textContent = 'Generating...';
+      const row = jobRows[jobId];
+      row.querySelector('.stage-log').innerHTML = '';
+      row.querySelector('.downloads').innerHTML = '';
+      try {
+        const res = await fetch(`/api/create-docs/${jobId}`, { method: 'POST' });
+        if (!res.ok) {
+          const body = await res.json().catch(() => ({ error: res.statusText }));
+          row.querySelector('.stage-log').innerHTML =
+            `<div class="error">Server error: ${esc(body.error || res.statusText)}</div>`;
+          btn.disabled = false;
+          btn.textContent = 'Retry';
+        }
+        // { started: true } — progress and completion come via socket.io
+      } catch (e) {
+        row.querySelector('.stage-log').innerHTML =
+          `<div class="error">Network error: ${esc(e.message)}</div>`;
+        btn.disabled = false;
+        btn.textContent = 'Retry';
+      }
+    }
+
+    function esc(str) {
+      return String(str ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+    }
+
+    loadJobs();
+  </script>
+</body>
+</html>
