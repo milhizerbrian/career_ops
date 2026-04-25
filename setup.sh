@@ -3,8 +3,9 @@ set -euo pipefail
 APP_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 V2="/Users/bmilhizer/xxv2"
 
-echo "Preparing data symlinks in xxv2..."
+echo "Preparing data symlinks in $V2..."
 # tracker.json lives at xxv2 root, but we read it via data/ — create an inner symlink
+mkdir -p "$V2/data"
 if [ ! -e "$V2/data/tracker.json" ] && [ ! -L "$V2/data/tracker.json" ]; then
   ln -s "$V2/tracker.json" "$V2/data/tracker.json"
   echo "  Linked xxv2/data/tracker.json -> ../tracker.json"
