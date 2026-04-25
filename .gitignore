@@ -1,0 +1,8 @@
+node_modules/
+logs/
+.env
+data
+config
+output
+reports
+package-lock.json
