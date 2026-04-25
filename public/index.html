@@ -87,6 +87,11 @@
                 : status === 'failed' ? 'error'
                 : stage === 'warning' ? 'warning' : '';
       log.innerHTML += `<div class="${cls}">${text}</div>`;
+      if (stage === 'error') {
+        const btn = row.querySelector('button');
+        btn.disabled = false;
+        btn.textContent = 'Retry';
+      }
     });
 
     socket.on('complete', ({ jobId, docxUrl, pdfUrl }) => {
@@ -170,7 +175,7 @@
     }
 
     function esc(str) {
-      return String(str ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+      return String(str ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
     }
 
     loadJobs();
