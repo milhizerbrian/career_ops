@@ -3,6 +3,8 @@ import { describe, it } from 'node:test';
 import {
   advanceStatus,
   buildGmailAttachFields,
+  gmailReauthMessage,
+  isGmailAuthError,
   listAmbiguousGmailJobs,
   matchGmailEventToTracker,
   shouldUseIncomingEmail,
@@ -144,6 +146,17 @@ describe('shouldUseIncomingEmail', () => {
       shouldUseIncomingEmail('2026-05-04T15:15:44.000Z', '2026-05-07T20:37:41.000Z'),
       true
     );
+  });
+});
+
+describe('Gmail auth failures', () => {
+  it('recognizes invalid_grant and returns a reauth instruction', () => {
+    assert.equal(isGmailAuthError(new Error('invalid_grant')), true);
+    assert.equal(isGmailAuthError({ code: 401, message: 'Invalid Credentials' }), true);
+    assert.equal(isGmailAuthError(new Error('quota exceeded')), false);
+    assert.match(gmailReauthMessage('invalid_grant'), /node oauth-setup\.mjs/);
+    assert.match(gmailReauthMessage('invalid_grant'), /GMAIL_REFRESH_TOKEN/);
+    assert.match(gmailReauthMessage('invalid_grant'), /--dry-run/);
   });
 });
 

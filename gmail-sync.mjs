@@ -234,6 +234,30 @@ function buildGmailClient() {
   return google.gmail({ version: 'v1', auth });
 }
 
+export function isGmailAuthError(err) {
+  const status = err?.code || err?.response?.status;
+  const message = String(err?.message || err?.response?.data?.error || '');
+  const description = String(err?.response?.data?.error_description || '');
+  return status === 401 ||
+    /\binvalid_grant\b/i.test(message) ||
+    /\binvalid_grant\b/i.test(description) ||
+    /invalid credentials|unauthorized/i.test(message);
+}
+
+export function gmailReauthMessage(detail = '') {
+  const suffix = detail ? ` (${detail})` : '';
+  return `Gmail authorization expired or was revoked${suffix}. Run: node oauth-setup.mjs, update GMAIL_REFRESH_TOKEN in .env, then retry npm run gmail-sync -- --dry-run`;
+}
+
+async function verifyGmailAuth(gmail) {
+  try {
+    await gmail.users.getProfile({ userId: 'me' });
+  } catch (err) {
+    if (isGmailAuthError(err)) throw new Error(gmailReauthMessage(err.message));
+    throw err;
+  }
+}
+
 // ── Email helpers ─────────────────────────────────────────────────────────────
 
 async function fetchThread(gmail, threadId) {
@@ -405,6 +429,7 @@ Rules:
 
 export async function runGmailSync({ jobId = null, dryRun = false, onProgress = null } = {}) {
   const gmail  = buildGmailClient();
+  await verifyGmailAuth(gmail);
   const jobs   = loadTracker().filter(j => j.company?.trim());
   const target = jobId ? jobs.filter(j => j.id === jobId) : jobs;
 
@@ -458,6 +483,7 @@ export async function runGmailSync({ jobId = null, dryRun = false, onProgress = 
       if (!dryRun) updateJob(job.id, updates);
       if (onProgress) onProgress(job.id, job.company, final, next_steps ?? '');
     } catch (err) {
+      if (isGmailAuthError(err)) throw new Error(gmailReauthMessage(err.message));
       process.stdout.write(`ERROR: ${err.message}\n`);
     }
   }
@@ -508,6 +534,7 @@ const PAGE_SIZE  = 500; // Gmail API max per page
 
 export async function runBroadGmailScan({ dryRun = false, onProgress = null } = {}) {
   const gmail = buildGmailClient();
+  await verifyGmailAuth(gmail);
 
   // ── Paginate through ALL matching threads ─────────────────────────────────
   process.stdout.write(`[gmail-scan] Full inbox sweep for job-related emails...\n`);
@@ -580,6 +607,7 @@ export async function runBroadGmailScan({ dryRun = false, onProgress = null } = 
       process.stdout.write(`  ✓ ${extracted.company} — ${extracted.role || '(role unknown)'} [${extracted.status}]\n`);
       if (onProgress) onProgress(null, extracted.company, extracted.status, extracted.next_steps || '');
     } catch (err) {
+      if (isGmailAuthError(err)) throw new Error(gmailReauthMessage(err.message));
       process.stdout.write(`  ERROR on thread ${threadId}: ${err.message}\n`);
     }
   }
