@@ -75,6 +75,9 @@ describe('frontend ES modules', () => {
     assert.match(api, /fetchResumeRuns/);
     assert.match(server, /\/api\/resume-runs/);
     assert.match(dashboard, /restoreResumeRuns/);
+    assert.match(dashboard, /reconcileResumeRuns/);
+    assert.match(dashboard, /activeResumeJobs/);
+    assert.match(dashboard, /Resume generation stopped before completion/);
     assert.match(dashboard, /processResumeProgress/);
     assert.match(dashboard, /alreadyRunning/);
   });

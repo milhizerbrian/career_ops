@@ -29,6 +29,7 @@ const socket   = io();
 let oppSort      = { col: 'date_updated', dir: 'desc' };
 let pipelineSort = 'count'; // 'count' | 'stage' | 'alpha'
 let activeHealthFilter = '';
+const activeResumeJobs = new Set();
 
 function isRejectedJob(job) {
   return (job?.status || '').toLowerCase() === 'rejected';
@@ -1724,12 +1725,14 @@ async function deleteJob(jobId) {
 async function triggerGenerate(jobId, btn) {
   setGeneratingState(jobId, 'Generating…');
   showAllProgSections(jobId);
+  activeResumeJobs.add(jobId);
 
   try {
     const result = await createDocs(jobId);
     if (result.alreadyRunning) appendLog(jobId, 'ok', 'Resume generation already running on server.');
   } catch (e) {
     appendLog(jobId, 'error', (e.response ? 'Server error: ' : 'Network error: ') + e.message);
+    activeResumeJobs.delete(jobId);
     resetBtn(jobId);
   }
 }
@@ -1770,6 +1773,7 @@ function updateBtnProgress(jobId, pct, label) {
 function processResumeProgress({ jobId, stage, status, message }) {
   if (!jobId || !stage) return;
   showAllProgSections(jobId, { clear: false });
+  activeResumeJobs.add(jobId);
   const baseStage = stage.split(':')[0];
   const label = STAGE_LABELS[baseStage] ?? humanizeStage(baseStage);
   const text  = message ? `${label}: ${message}` : `${label}: ${status}`;
@@ -1780,7 +1784,10 @@ function processResumeProgress({ jobId, stage, status, message }) {
   const prog = STAGE_PROGRESS[baseStage];
   if (prog) updateBtnProgress(jobId, status === 'started' ? prog.started : prog.done, label);
 
-  if (kind === 'error') resetBtn(jobId);
+  if (kind === 'error') {
+    activeResumeJobs.delete(jobId);
+    resetBtn(jobId);
+  }
 }
 
 socket.on('progress', processResumeProgress);
@@ -1788,6 +1795,7 @@ socket.on('progress', processResumeProgress);
 function processResumeComplete({ jobId, docxUrl, pdfUrl }) {
   if (!jobId || !docxUrl) return;
   showAllProgSections(jobId, { clear: false });
+  activeResumeJobs.delete(jobId);
   genBtns(jobId).forEach(btn => {
     btn.style.backgroundColor = '#059669';
     btn.textContent = '✓ Complete';
@@ -1804,11 +1812,22 @@ function processResumeComplete({ jobId, docxUrl, pdfUrl }) {
 }
 
 socket.on('complete', processResumeComplete);
+socket.on('connect', () => reconcileResumeRuns({ resetMissingActive: true }));
 
 async function restoreResumeRuns() {
+  await reconcileResumeRuns({ resetMissingActive: false });
+}
+
+async function reconcileResumeRuns({ resetMissingActive = false } = {}) {
   try {
     const runs = await fetchResumeRuns();
+    const serverActive = new Set(runs.filter(run => run.status === 'running').map(run => run.jobId));
     for (const run of runs) restoreResumeRun(run);
+    if (resetMissingActive) {
+      for (const jobId of [...activeResumeJobs]) {
+        if (!serverActive.has(jobId)) markResumeRunStopped(jobId);
+      }
+    }
   } catch {
     // Non-blocking: generation still runs; this only restores visible progress after refresh.
   }
@@ -1817,7 +1836,10 @@ async function restoreResumeRuns() {
 function restoreResumeRun(run) {
   if (!run?.jobId || !Array.isArray(run.events) || !run.events.length) return;
   showAllProgSections(run.jobId);
-  if (run.status === 'running') setGeneratingState(run.jobId, 'Generating…');
+  if (run.status === 'running') {
+    activeResumeJobs.add(run.jobId);
+    setGeneratingState(run.jobId, 'Generating…');
+  }
   for (const event of run.events) {
     if (event.event === 'progress') processResumeProgress(event);
     if (event.event === 'complete') processResumeComplete(event);
@@ -1828,7 +1850,15 @@ function restoreResumeRun(run) {
     const label = STAGE_LABELS[baseStage] ?? 'Generating';
     const prog = STAGE_PROGRESS[baseStage];
     if (prog) updateBtnProgress(run.jobId, prog.started, label);
+  } else {
+    activeResumeJobs.delete(run.jobId);
   }
+}
+
+function markResumeRunStopped(jobId) {
+  activeResumeJobs.delete(jobId);
+  appendLog(jobId, 'error', 'Resume generation stopped before completion. Retry to start a new run.');
+  resetBtn(jobId);
 }
 
 function appendLog(jobId, kind, text) {
