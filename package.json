@@ -5,14 +5,29 @@
   "main": "server.mjs",
   "scripts": {
     "start": "node server.mjs",
-    "test": "node --test test/docx-utils.test.mjs"
+    "test": "node --test test/*.test.mjs",
+    "scan": "node scan.mjs",
+    "scan:linkedin": "node scan-linkedin.mjs",
+    "evaluate": "node evaluate.mjs",
+    "pipeline": "node scan.mjs --days 2 && node evaluate.mjs --concurrency 4",
+    "pipeline:full": "node scan.mjs --days 10 && node evaluate.mjs --concurrency 4",
+    "pipeline:linkedin": "node scan-linkedin.mjs",
+    "pipeline:all": "node scan.mjs --days 2 && node scan-linkedin.mjs && node evaluate.mjs --concurrency 4",
+    "gmail-sync": "node gmail-sync.mjs",
+    "health": "node scripts/health-check.mjs",
+    "enrich:brag": "node scripts/enrich-brag-doc.mjs",
+    "coach:brag": "node scripts/brag-quality.mjs"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.91.0",
+    "cheerio": "^1.2.0",
     "chokidar": "^3.6.0",
     "express": "^5.2.1",
+    "googleapis": "^171.4.0",
     "js-yaml": "^4.1.0",
+    "pdf2json": "^4.0.3",
     "pizzip": "^3.2.0",
+    "playwright": "^1.59.1",
     "socket.io": "^4.8.3"
   }
 }

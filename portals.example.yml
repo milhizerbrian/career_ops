@@ -1,0 +1,43 @@
+# Portal scanner example config.
+# Copy to portals.yml and tune queries/filters for your local search.
+
+wttj_searches:
+  enabled: true
+  algolia_app_id: "example-app-id"
+  algolia_api_key: "example-search-key"
+  algolia_index: "wttj_jobs_production_en"
+  us_or_remote_only: true
+  queries:
+    - "customer success manager security remote"
+    - "technical account manager cybersecurity remote"
+
+location_filter:
+  negative:
+    - "EMEA"
+    - "APAC"
+    - "LATAM"
+
+title_filter:
+  positive:
+    - "Customer Success"
+    - "Technical Account Manager"
+    - "Solutions Engineer"
+  negative:
+    - "Intern"
+    - "Entry"
+    - "Account Executive"
+  seniority_boost:
+    - "Senior"
+    - "Strategic"
+    - "Enterprise"
+
+search_queries:
+  - name: "Example ATS search"
+    query: 'site:boards.greenhouse.io "Customer Success Manager" security remote'
+    enabled: true
+
+linkedin_searches:
+  enabled: true
+  keywords:
+    - "customer success manager cybersecurity"
+    - "technical account manager security"

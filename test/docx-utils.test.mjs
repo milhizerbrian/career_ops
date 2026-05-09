@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { patchDocXml, xmlEscape } from '../lib/docx-utils.mjs';
+import { patchDocXml, patchDocXmlSdt, xmlEscape } from '../lib/docx-utils.mjs';
 
 describe('xmlEscape', () => {
   it('escapes ampersands', () => {
@@ -67,5 +67,57 @@ describe('patchDocXml — edge cases', () => {
     const { docXml, unreplaced } = patchDocXml(xml, {});
     assert.equal(docXml, xml);
     assert.deepEqual(unreplaced, []);
+  });
+});
+
+// ── SDT helpers ────────────────────────────────────────────────────────────────
+
+function sdt(tagVal, textContent) {
+  return `<w:sdt><w:sdtPr><w:tag w:val="${tagVal}"/></w:sdtPr><w:sdtContent><w:p><w:r><w:t>${textContent}</w:t></w:r></w:p></w:sdtContent></w:sdt>`;
+}
+
+describe('patchDocXmlSdt — simple replacements', () => {
+  it('replaces text inside a matching SDT tag', () => {
+    const xml = sdt('PROFESSIONAL_SUMMARY', 'Click or tap here to enter text.');
+    const { docXml, unreplaced } = patchDocXmlSdt(xml, { PROFESSIONAL_SUMMARY: 'Strategic CSM with 25 years.' });
+    assert.ok(docXml.includes('<w:t>Strategic CSM with 25 years.</w:t>'));
+    assert.deepEqual(unreplaced, []);
+  });
+
+  it('XML-escapes replacement values', () => {
+    const xml = sdt('TITLE_LINE', 'placeholder');
+    const { docXml } = patchDocXmlSdt(xml, { TITLE_LINE: 'CSM & Security <Expert>' });
+    assert.ok(docXml.includes('CSM &amp; Security &lt;Expert&gt;'));
+  });
+
+  it('leaves unmatched SDTs unchanged and reports them', () => {
+    const xml = sdt('MISSING_FIELD', 'Click or tap here to enter text.');
+    const { docXml, unreplaced } = patchDocXmlSdt(xml, {});
+    assert.ok(docXml.includes('Click or tap here to enter text.'));
+    assert.deepEqual(unreplaced, ['MISSING_FIELD']);
+  });
+
+  it('replaces multiple SDTs in one document', () => {
+    const xml = sdt('TITLE_LINE', 'placeholder') + sdt('PROFESSIONAL_SUMMARY', 'placeholder');
+    const { docXml, unreplaced } = patchDocXmlSdt(xml, {
+      TITLE_LINE: 'Senior CSM',
+      PROFESSIONAL_SUMMARY: 'Experienced leader.',
+    });
+    assert.ok(docXml.includes('<w:t>Senior CSM</w:t>'));
+    assert.ok(docXml.includes('<w:t>Experienced leader.</w:t>'));
+    assert.deepEqual(unreplaced, []);
+  });
+
+  it('deduplicates unreplaced entries', () => {
+    const xml = sdt('MISSING', 'x') + sdt('MISSING', 'x');
+    const { unreplaced } = patchDocXmlSdt(xml, {});
+    assert.equal(unreplaced.length, 1);
+  });
+
+  it('does not touch SDTs that have no replacements supplied', () => {
+    const xml = sdt('KEEP_ME', 'original text') + sdt('REPLACE_ME', 'old');
+    const { docXml } = patchDocXmlSdt(xml, { REPLACE_ME: 'new' });
+    assert.ok(docXml.includes('original text'));
+    assert.ok(docXml.includes('<w:t>new</w:t>'));
   });
 });

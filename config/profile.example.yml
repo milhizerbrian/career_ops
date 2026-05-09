@@ -1,0 +1,76 @@
+# Career-Ops Profile example
+# Copy to config/profile.yml and replace placeholders with local/private details.
+
+candidate:
+  full_name: "Example Candidate"
+  email: "candidate@example.com"
+  phone: ""
+  location: "Remote, United States"
+  linkedin: "linkedin.com/in/example"
+  portfolio_url: ""
+  github: ""
+  twitter: ""
+
+target_roles:
+  primary:
+    - "Strategic Customer Success Manager"
+    - "Director of Customer Success"
+  archetypes:
+    - name: "Enterprise CSM"
+      level: "Senior/Strategic"
+      fit: "primary"
+    - name: "Technical Account Manager"
+      level: "Senior"
+      fit: "secondary"
+
+scoring_overrides:
+  company_founded_after_2020:
+    boost: 1.0
+    reason: "Prefer modern companies with room to shape the function"
+  company_size_under_1000:
+    boost: 1.0
+    reason: "Prefer builder-stage teams"
+  salary_below_165k:
+    penalty: 1.0
+    reason: "Below target compensation"
+
+narrative:
+  headline: "Customer Success Leader"
+  exit_story: "Experienced customer success leader focused on enterprise adoption, retention, and expansion."
+  superpowers:
+    - "Enterprise portfolio management"
+    - "Executive stakeholder engagement"
+    - "Renewal and expansion strategy"
+  proof_points:
+    - name: "Retention"
+      hero_metric: "Improved enterprise retention through structured success planning"
+    - name: "Expansion"
+      hero_metric: "Identified expansion opportunities across strategic accounts"
+
+background:
+  military: ""
+  education:
+    - "Degree or program"
+  certifications:
+    - "Relevant certification"
+  platforms: "Salesforce • Gainsight • Customer success tools"
+
+compensation:
+  target_range: "$000K-$000K"
+  currency: "USD"
+  minimum: "$000K"
+  location_flexibility: "Remote or local market"
+
+location:
+  country: "United States"
+  city: "Example City"
+  state: "ST"
+  timezone: "UTC"
+  visa_status: ""
+
+deal_breakers:
+  - "Below target compensation"
+  - "Fully on-site outside target market"
+
+language:
+  modes_dir: "modes"

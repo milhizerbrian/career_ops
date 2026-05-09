@@ -1,8 +1,16 @@
 node_modules/
 logs/
+*.log
+*-log.txt
 .env
-data
-config
-output
-reports
-package-lock.json
+.DS_Store
+.claude/
+config/profile.yml
+config/*.local.yml
+portals.yml
+data/
+output/
+reports/
+tracker.json
+scan-history.tsv
+prioritized multistep task list.docx
