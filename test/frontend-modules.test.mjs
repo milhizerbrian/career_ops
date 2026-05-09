@@ -82,6 +82,17 @@ describe('frontend ES modules', () => {
     assert.match(dashboard, /alreadyRunning/);
   });
 
+  it('cleans up resume helper processes after generation ends', () => {
+    const server = read('server.mjs');
+    const cleanup = read('lib/resume-resource-cleanup.mjs');
+
+    assert.match(server, /cleanupResumeResourceProcesses/);
+    assert.match(server, /finally/);
+    assert.match(cleanup, /llmworker/);
+    assert.match(cleanup, /headless LibreOffice/);
+    assert.match(cleanup, /RESUME_CLEANUP_PROCESSES/);
+  });
+
   it('renders lightweight generated resume version history', () => {
     const dashboard = read('public/js/dashboard.js');
     assert.match(dashboard, /generatedResumeVersions/);

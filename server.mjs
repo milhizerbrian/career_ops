@@ -22,6 +22,7 @@ import { buildGeneratedDocEntry } from './lib/generated-docs.mjs';
 import { normalizeStatus } from './lib/status-utils.mjs';
 import { validatePublicHttpUrl } from './lib/url-safety.mjs';
 import { analyzeBragDocQuality } from './lib/brag-quality.mjs';
+import { cleanupResumeResourceProcesses } from './lib/resume-resource-cleanup.mjs';
 import { appendWorkflowEvent, applyManualWorkflowEvent } from './lib/job-workflow.mjs';
 import { upsertJobContact } from './lib/job-contacts.mjs';
 import { createOutreachDraft, storeOutreachDraft } from './lib/outreach-drafts.mjs';
@@ -543,6 +544,10 @@ app.post('/api/create-docs/:id', express.json(), async (req, res) => {
     }
   } catch (err) {
     emitResumeEvent('progress', { jobId, stage: 'error', status: 'failed', message: err.message });
+  } finally {
+    cleanupResumeResourceProcesses().catch(err => {
+      process.stderr.write(`[resume-cleanup] ${err.message}\n`);
+    });
   }
 });
 
