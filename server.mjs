@@ -488,8 +488,17 @@ io.on('connection', socket => {
   process.stdout.write(`[socket.io] connected: ${socket.id}\n`);
 });
 
-startWatcher();
+export function createApp() {
+  return app;
+}
 
-httpServer.listen(PORT, () => {
-  process.stdout.write(`career-ops running at http://localhost:${PORT}\n`);
-});
+export function startServer({ port = PORT } = {}) {
+  startWatcher();
+  return httpServer.listen(port, () => {
+    process.stdout.write(`career-ops running at http://localhost:${port}\n`);
+  });
+}
+
+if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+  startServer();
+}

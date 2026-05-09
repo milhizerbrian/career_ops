@@ -23,7 +23,12 @@ import { writeJsonAtomic } from './lib/atomic-file.mjs';
 import { STATUS_ORDER, normalizeStatus } from './lib/status-utils.mjs';
 
 const APP_ROOT = path.dirname(fileURLToPath(import.meta.url));
-const GMAIL_JOBS_PATH = path.resolve(APP_ROOT, 'data', 'gmail-jobs.json');
+const DATA_DIR = process.env.CAREER_OPS_DATA_DIR
+  ? path.resolve(process.env.CAREER_OPS_DATA_DIR)
+  : path.resolve(APP_ROOT, 'data');
+const GMAIL_JOBS_PATH = process.env.CAREER_OPS_GMAIL_JOBS_PATH
+  ? path.resolve(process.env.CAREER_OPS_GMAIL_JOBS_PATH)
+  : path.resolve(DATA_DIR, 'gmail-jobs.json');
 const AUTO_MATCH_THRESHOLD = 0.62;
 const AMBIGUOUS_GAP = 0.12;
 const OUTCOME_STATUSES = new Set(['offer', 'rejected', 'withdrawn']);

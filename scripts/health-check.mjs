@@ -179,7 +179,13 @@ export function checkOutputWritable(outputDir = path.resolve(APP_ROOT, 'output')
 
 export async function runHealthChecks({ env = process.env, fetchImpl = fetch } = {}) {
   const lmChecks = await checkLmStudio(fetchImpl, env);
-  return [
+  const trackerPath = env.CAREER_OPS_TRACKER_PATH || (
+    env.CAREER_OPS_DATA_DIR ? path.resolve(env.CAREER_OPS_DATA_DIR, 'tracker.json') : undefined
+  );
+  const profilePath = env.CAREER_OPS_CONFIG_DIR
+    ? path.resolve(env.CAREER_OPS_CONFIG_DIR, 'profile.yml')
+    : undefined;
+  const checks = [
     checkNodeVersion(),
     ...lmChecks,
     checkAnthropicEnv(env),
@@ -187,10 +193,18 @@ export async function runHealthChecks({ env = process.env, fetchImpl = fetch } =
     await checkPdfTools(env),
     checkPlaywrightChromium(),
     checkResumeTemplate(),
-    checkTrackerJson(),
-    checkProfileYaml(),
+    checkTrackerJson(trackerPath),
+    checkProfileYaml(profilePath),
     checkOutputWritable(),
   ];
+  if (isEnabled(env.CAREER_OPS_HEALTH_NON_SECRET)) {
+    return checks.map(check => (
+      check.status === 'FAIL' && ['Playwright Chromium', 'Resume template', 'Profile YAML'].includes(check.name)
+        ? { ...check, status: 'WARN', message: `${check.message}; skipped in non-secret CI mode` }
+        : check
+    ));
+  }
+  return checks;
 }
 
 export function formatChecks(checks) {
