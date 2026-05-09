@@ -278,11 +278,22 @@ function renderGmailAmbiguities() {
   listEl.querySelectorAll('.gmail-dismiss-btn').forEach(btn => {
     btn.addEventListener('click', () => dismissSelectedGmailMatch(btn));
   });
+  listEl.querySelectorAll('.gmail-candidate-select').forEach(select => {
+    select.addEventListener('change', () => {
+      const label = select.closest('[data-thread-id]')?.querySelector('.gmail-selected-job-label');
+      const selectedText = select.selectedOptions?.[0]?.textContent || 'No candidate selected';
+      if (label) label.textContent = selectedText.replace(/\s*\(\d+%\)\s*$/, '');
+    });
+  });
 }
 
 function renderGmailAmbiguityCard(item) {
   const threadId = item.thread_id || '';
   const candidates = Array.isArray(item.matchCandidates) ? item.matchCandidates : [];
+  const selected = candidates[0] || null;
+  const emailDate = item.last_email_date
+    ? new Date(item.last_email_date).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
+    : 'Unknown time';
   const candidateRows = candidates.length
     ? candidates.map(c => `<div class="text-[11px] text-slate-500">
         <span class="font-semibold text-slate-700">${esc(c.company || '')}</span>
@@ -294,27 +305,42 @@ function renderGmailAmbiguityCard(item) {
     const label = `${c.company || 'Unknown'} — ${c.title || 'Unknown'} (${formatConfidence(c.confidence)})`;
     return `<option value="${esc(c.id)}">${esc(label)}</option>`;
   }).join('');
+  const selectedLabel = selected
+    ? `${selected.company || 'Unknown'} — ${selected.title || 'Unknown'}`
+    : 'No candidate selected';
 
   return `<div class="border border-slate-200 rounded-lg p-3" data-thread-id="${esc(threadId)}">
-    <div class="flex flex-col lg:flex-row lg:items-start gap-3">
-      <div class="min-w-0 flex-1">
-        <p class="text-xs font-semibold text-slate-700 truncate">${esc(item.last_email_subject || '(no subject)')}</p>
-        <p class="text-[11px] text-slate-400 truncate">${esc(item.from || '')}</p>
-        <p class="text-xs text-slate-600 mt-2">
-          <span class="font-semibold">${esc(item.company || 'Unknown')}</span>
+    <div class="grid grid-cols-1 xl:grid-cols-[minmax(0,1.1fr)_minmax(280px,0.9fr)_220px] gap-4 items-start">
+      <div class="min-w-0">
+        <p class="text-[10px] font-bold uppercase tracking-wide text-slate-400 mb-2">Email</p>
+        <p class="text-xs font-semibold text-slate-700 truncate">${esc(item.company || 'Unknown company')}</p>
+        <p class="text-[11px] text-slate-400">${esc(emailDate)}</p>
+        <p class="text-[11px] text-slate-500 truncate mt-1">${esc(item.from || 'Unknown sender')}</p>
+        <p class="text-xs text-slate-700 mt-2 line-clamp-2">${esc(item.last_email_subject || '(no subject)')}</p>
+        <p class="text-[11px] text-slate-500 mt-2">
+          Detected: <span class="font-semibold">${esc(item.company || 'Unknown')}</span>
           ${item.role ? `· ${esc(item.role)}` : ''}
           <span class="text-slate-400">· ${formatConfidence(item.gmailMatch?.confidence)}</span>
         </p>
+      </div>
+      <div class="min-w-0">
+        <p class="text-[10px] font-bold uppercase tracking-wide text-slate-400 mb-2">If approved</p>
+        <p class="text-xs text-slate-600 leading-relaxed">
+          Attach this email to <span class="font-semibold text-slate-800 gmail-selected-job-label">${esc(selectedLabel)}</span>.
+          Save subject, sender context, email date, snippet, confidence, and manual resolution metadata.
+        </p>
+        <p class="text-[11px] text-slate-400 mt-2">Job status will not change automatically.</p>
         <div class="mt-2 space-y-0.5">${candidateRows}</div>
         <p class="gmail-ambiguity-error hidden text-xs text-rose-600 mt-2"></p>
       </div>
-      <div class="flex flex-col sm:flex-row lg:flex-col gap-2 lg:w-72">
+      <div class="flex flex-col gap-2">
+        <p class="text-[10px] font-bold uppercase tracking-wide text-slate-400">Decision</p>
         <select class="gmail-candidate-select border border-slate-200 rounded-lg px-3 py-2 text-xs bg-white text-slate-700 outline-none focus:ring-2 focus:ring-blue-600/20" ${candidates.length ? '' : 'disabled'}>
           ${options}
         </select>
-        <div class="flex gap-2">
-          <button class="gmail-attach-btn flex-1 bg-primary text-white text-xs font-semibold px-3 py-2 rounded-lg hover:opacity-90 disabled:opacity-50" ${candidates.length ? '' : 'disabled'}>Attach</button>
-          <button class="gmail-dismiss-btn flex-1 text-xs font-semibold text-slate-600 border border-slate-200 px-3 py-2 rounded-lg hover:bg-slate-50">Dismiss</button>
+        <div class="grid grid-cols-2 gap-2">
+          <button class="gmail-attach-btn bg-primary text-white text-xs font-semibold px-3 py-2 rounded-lg hover:opacity-90 disabled:opacity-50" ${candidates.length ? '' : 'disabled'}>Approve</button>
+          <button class="gmail-dismiss-btn text-xs font-semibold text-slate-600 border border-slate-200 px-3 py-2 rounded-lg hover:bg-slate-50">Decline</button>
         </div>
       </div>
     </div>

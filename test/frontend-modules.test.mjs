@@ -50,6 +50,10 @@ describe('frontend ES modules', () => {
     assert.match(html, /AMBIGUOUS EMAIL MATCHES/);
     assert.match(dashboard, /fetchAmbiguousGmailJobs/);
     assert.match(dashboard, /renderGmailAmbiguities/);
+    assert.match(dashboard, /If approved/);
+    assert.match(dashboard, /Job status will not change automatically/);
+    assert.match(dashboard, /Approve/);
+    assert.match(dashboard, /Decline/);
     assert.match(dashboard, /showView\('gmail-review'\)/);
     assert.match(dashboard, /attachGmailAmbiguity/);
     assert.match(dashboard, /dismissGmailAmbiguity/);
