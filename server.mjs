@@ -54,8 +54,9 @@ const OUTPUT_DIR = path.resolve(APP_ROOT, 'output');
 
 fs.mkdirSync(OUTPUT_DIR, { recursive: true });
 
-// SPA entry
-app.get('/', (req, res) => {
+// SPA entries for URL-addressable dashboard views
+const SPA_ROUTES = ['/', '/dashboard', '/gmail-review', '/gmail-revoew', '/interviews', '/rejected'];
+app.get(SPA_ROUTES, (req, res) => {
   res.sendFile(path.resolve(APP_ROOT, 'public', 'index.html'));
 });
 

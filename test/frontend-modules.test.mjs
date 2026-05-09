@@ -43,6 +43,7 @@ describe('frontend ES modules', () => {
     const html = read('public/index.html');
     const dashboard = read('public/js/dashboard.js');
     const api = read('public/js/api.js');
+    const server = read('server.mjs');
 
     assert.match(html, /data-view="gmail-review"/);
     assert.match(html, /id="view-gmail-review"/);
@@ -57,6 +58,9 @@ describe('frontend ES modules', () => {
     assert.match(dashboard, /Approve/);
     assert.match(dashboard, /Decline/);
     assert.match(dashboard, /showView\('gmail-review'\)/);
+    assert.match(dashboard, /\/gmail-review/);
+    assert.match(server, /\/gmail-review/);
+    assert.match(server, /\/gmail-revoew/);
     assert.match(dashboard, /attachGmailAmbiguity/);
     assert.match(dashboard, /dismissGmailAmbiguity/);
     assert.match(api, /\/api\/gmail-jobs\/'\s*\+\s*encodeURIComponent\(threadId\)\s*\+\s*'\/attach/);

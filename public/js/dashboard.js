@@ -61,20 +61,47 @@ async function init() {
 
 // ─── Navigation ───────────────────────────────────────────────────────────────
 const VIEWS = ['dashboard', 'gmail-review', 'interviews', 'rejected'];
+const VIEW_PATHS = {
+  dashboard: '/',
+  'gmail-review': '/gmail-review',
+  interviews: '/interviews',
+  rejected: '/rejected',
+};
+const PATH_VIEWS = {
+  '/': 'dashboard',
+  '/dashboard': 'dashboard',
+  '/gmail-review': 'gmail-review',
+  '/gmail-revoew': 'gmail-review',
+  '/interviews': 'interviews',
+  '/rejected': 'rejected',
+};
 
-function showView(name) {
+function viewFromPath(pathname = window.location.pathname) {
+  return PATH_VIEWS[pathname] || 'dashboard';
+}
+
+function showView(name, { push = true } = {}) {
+  const viewName = VIEWS.includes(name) ? name : 'dashboard';
   VIEWS.forEach(v => {
-    document.getElementById('view-' + v).hidden = (v !== name);
+    document.getElementById('view-' + v).hidden = (v !== viewName);
   });
   document.querySelectorAll('.nav-btn').forEach(btn => {
-    const active = btn.dataset.view === name;
+    const active = btn.dataset.view === viewName;
     btn.className = 'nav-btn w-full flex items-center gap-3 px-3 py-2 rounded-lg transition-all text-sm font-medium '
       + (active ? 'nav-active' : 'nav-inactive');
   });
+  const nextPath = VIEW_PATHS[viewName] || '/';
+  if (push && window.location.pathname !== nextPath) {
+    history.pushState({ view: viewName }, '', nextPath);
+  }
 }
 
 document.querySelectorAll('.nav-btn').forEach(btn => {
   btn.addEventListener('click', () => showView(btn.dataset.view));
+});
+
+window.addEventListener('popstate', () => {
+  showView(viewFromPath(), { push: false });
 });
 
 document.getElementById('global-search').addEventListener('input', () => {
@@ -1900,5 +1927,5 @@ function esc(str) {
 }
 
 // ─── Start ────────────────────────────────────────────────────────────────────
-showView('dashboard');
+showView(viewFromPath(), { push: false });
 init();
