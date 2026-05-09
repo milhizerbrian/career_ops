@@ -14,6 +14,10 @@ export function fetchDashboard() {
   return jsonFetch('/api/dashboard');
 }
 
+export function fetchResumeRuns() {
+  return jsonFetch('/api/resume-runs');
+}
+
 export function evaluateUrl(payload) {
   return jsonFetch('/api/evaluate-url', {
     method: 'POST',

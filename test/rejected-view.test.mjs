@@ -29,7 +29,7 @@ describe('rejected roles view', () => {
   it('includes rejected rows in generation progress handling', () => {
     const dashboard = read('public/js/dashboard.js');
 
-    assert.match(dashboard, /showProgSection\('rej-prog-' \+ jobId\)/);
+    assert.match(dashboard, /showAllProgSections\(jobId/);
     assert.match(dashboard, /rej-gen-btn/);
     assert.match(dashboard, /\['opp-prog-', 'int-prog-', 'rej-prog-'\]/);
   });

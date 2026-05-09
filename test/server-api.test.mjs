@@ -124,6 +124,12 @@ describe('server API routes', () => {
     assert.match(tracker().job1.notes, /Prep account notes/);
   });
 
+  it('exposes resume run snapshots for refresh recovery', async () => {
+    const result = await request('/api/resume-runs');
+    assert.equal(result.res.status, 200);
+    assert.deepEqual(result.body, []);
+  });
+
   it('validates and persists job contacts', async () => {
     const invalid = await request('/api/jobs/job1/contacts', {
       method: 'POST',

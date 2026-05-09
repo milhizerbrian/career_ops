@@ -51,8 +51,54 @@ const httpServer = createServer(app);
 const io = new Server(httpServer);
 const PORT = parseInt(process.env.PORT ?? '3000', 10);
 const OUTPUT_DIR = path.resolve(APP_ROOT, 'output');
+const resumeRuns = new Map();
 
 fs.mkdirSync(OUTPUT_DIR, { recursive: true });
+
+function resumeRun(jobId) {
+  if (!resumeRuns.has(jobId)) {
+    resumeRuns.set(jobId, {
+      jobId,
+      status: 'running',
+      startedAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      events: [],
+      complete: null,
+      error: null,
+    });
+  }
+  return resumeRuns.get(jobId);
+}
+
+function recordResumeEvent(jobId, event, payload = {}) {
+  const run = resumeRun(jobId);
+  const entry = { event, at: new Date().toISOString(), ...payload };
+  run.events.push(entry);
+  run.events = run.events.slice(-80);
+  run.updatedAt = entry.at;
+  if (event === 'complete') {
+    run.status = 'complete';
+    run.complete = payload;
+  }
+  if (event === 'progress' && (payload.status === 'failed' || String(payload.stage || '').startsWith('error'))) {
+    run.status = 'failed';
+    run.error = payload.message || 'Resume generation failed';
+  }
+  return entry;
+}
+
+function emitResumeEvent(event, payload) {
+  if (payload?.jobId) recordResumeEvent(payload.jobId, event, payload);
+  io.emit(event, payload);
+}
+
+function resumeIo() {
+  return {
+    emit(event, payload) {
+      emitResumeEvent(event, payload);
+    },
+  };
+}
 
 // SPA entries for URL-addressable dashboard views
 const SPA_ROUTES = ['/', '/dashboard', '/gmail-review', '/gmail-revoew', '/interviews', '/rejected'];
@@ -85,6 +131,10 @@ app.get('/api/dashboard', (req, res) => {
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
+});
+
+app.get('/api/resume-runs', (req, res) => {
+  res.json([...resumeRuns.values()]);
 });
 
 app.get('/api/brag-quality', (req, res) => {
@@ -460,25 +510,39 @@ app.post('/api/create-docs/:id', express.json(), async (req, res) => {
   } catch (err) {
     return res.status(404).json({ error: err.message });
   }
+  const existingRun = resumeRuns.get(jobId);
+  if (existingRun?.status === 'running') {
+    return res.json({ started: true, jobId, alreadyRunning: true });
+  }
+  resumeRuns.set(jobId, {
+    jobId,
+    status: 'running',
+    startedAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+    events: [],
+    complete: null,
+    error: null,
+  });
   res.json({ started: true, jobId });
+  const runIo = resumeIo();
   try {
     if (abTest) {
       // Pipeline: load → LM A → (LM B ‖ Claude A) → docxA → Claude B → docxB.
       // Sharing the model load across both variants and overlapping Claude A
       // with LM B saves ~one Claude pass (~10–15s) per A/B run.
-      const stateA = await generateResumeDraft(jobId, io, injectedSkills, 'technical');
+      const stateA = await generateResumeDraft(jobId, runIo, injectedSkills, 'technical');
       const [stateB, resA] = await Promise.all([
-        generateResumeDraft(jobId, io, injectedSkills, 'outcomes'),
+        generateResumeDraft(jobId, runIo, injectedSkills, 'outcomes'),
         generateResumeFinish(stateA),
       ]);
       saveGeneratedDoc(jobId, resA);
       const resB = await generateResumeFinish(stateB);
       saveGeneratedDoc(jobId, resB);
     } else {
-      saveGeneratedDoc(jobId, await generateResume(jobId, io, injectedSkills));
+      saveGeneratedDoc(jobId, await generateResume(jobId, runIo, injectedSkills));
     }
   } catch (err) {
-    io.emit('progress', { jobId, stage: 'error', status: 'failed', message: err.message });
+    emitResumeEvent('progress', { jobId, stage: 'error', status: 'failed', message: err.message });
   }
 });
 

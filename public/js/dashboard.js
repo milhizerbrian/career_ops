@@ -6,6 +6,7 @@ import {
   evaluateUrl,
   fetchAmbiguousGmailJobs,
   fetchDashboard,
+  fetchResumeRuns,
   generateContactOutreachDraft,
   patchJob,
   postWorkflowEvent,
@@ -54,6 +55,7 @@ async function init() {
     setupOpportunities();
     setupInterviews();
     setupRejected();
+    restoreResumeRuns();
   } catch (e) {
     document.getElementById('dash-subtitle').textContent = 'Failed to load: ' + e.message;
   }
@@ -310,6 +312,13 @@ function renderGmailAmbiguities() {
       updateGmailApprovalPreview(select);
     });
   });
+  listEl.querySelectorAll('.gmail-candidate-edit-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const card = btn.closest('[data-thread-id]');
+      const jobId = btn.dataset.id || card?.querySelector('.gmail-candidate-select')?.value;
+      if (jobId) openEditModal(jobId);
+    });
+  });
 }
 
 function renderGmailAmbiguityCard(item) {
@@ -322,10 +331,13 @@ function renderGmailAmbiguityCard(item) {
     ? new Date(item.last_email_date).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
     : 'Unknown time';
   const candidateRows = candidates.length
-    ? candidates.map(c => `<div class="text-[11px] text-slate-500">
-        <span class="font-semibold text-slate-700">${esc(c.company || '')}</span>
-        ${esc(c.title || '')}
-        <span class="text-slate-400">· ${formatConfidence(c.confidence)} · ${(c.matchedBy || []).map(esc).join(', ')}</span>
+    ? candidates.map(c => `<div class="text-[11px] text-slate-500 flex items-center justify-between gap-2">
+        <span class="min-w-0">
+          <span class="font-semibold text-slate-700">${esc(c.company || '')}</span>
+          ${esc(c.title || '')}
+          <span class="text-slate-400">· ${formatConfidence(c.confidence)} · ${(c.matchedBy || []).map(esc).join(', ')}</span>
+        </span>
+        <button type="button" class="gmail-candidate-edit-btn text-[11px] font-semibold text-blue-600 hover:underline shrink-0" data-id="${esc(c.id)}">Edit</button>
       </div>`).join('')
     : '<div class="text-[11px] text-slate-400">No candidates available.</div>';
   const options = candidates.map(c => {
@@ -377,6 +389,8 @@ function renderGmailAmbiguityCard(item) {
         <select class="gmail-candidate-select border border-slate-200 rounded-lg px-3 py-2 text-xs bg-white text-slate-700 outline-none focus:ring-2 focus:ring-blue-600/20" ${candidates.length ? '' : 'disabled'}>
           ${options}
         </select>
+        <button type="button" class="gmail-candidate-edit-btn text-xs font-semibold text-blue-600 border border-blue-100 px-3 py-2 rounded-lg hover:bg-blue-50 disabled:opacity-50"
+          ${candidates.length ? '' : 'disabled'}>Edit selected job</button>
         <div class="grid grid-cols-2 gap-2">
           <button class="gmail-attach-btn bg-primary text-white text-xs font-semibold px-3 py-2 rounded-lg hover:opacity-90 disabled:opacity-50" ${candidates.length ? '' : 'disabled'}>Approve</button>
           <button class="gmail-dismiss-btn text-xs font-semibold text-slate-600 border border-slate-200 px-3 py-2 rounded-lg hover:bg-slate-50">Decline</button>
@@ -1546,6 +1560,7 @@ async function refreshDashboardState() {
 function renderAllViews() {
   renderDashboard();
   applyOppFilters();
+  renderGmailAmbiguities();
   renderInterviews();
   renderRejected();
 }
@@ -1707,33 +1722,41 @@ async function deleteJob(jobId) {
 
 // ─── Resume generation ────────────────────────────────────────────────────────
 async function triggerGenerate(jobId, btn) {
-  btn.disabled = true;
-  btn.textContent = 'Generating…';
-
-  showProgSection('opp-prog-' + jobId);
-  showProgSection('int-prog-' + jobId);
-  showProgSection('rej-prog-' + jobId);
+  setGeneratingState(jobId, 'Generating…');
+  showAllProgSections(jobId);
 
   try {
-    await createDocs(jobId);
+    const result = await createDocs(jobId);
+    if (result.alreadyRunning) appendLog(jobId, 'ok', 'Resume generation already running on server.');
   } catch (e) {
     appendLog(jobId, 'error', (e.response ? 'Server error: ' : 'Network error: ') + e.message);
     resetBtn(jobId);
   }
 }
 
-function showProgSection(id) {
+function showAllProgSections(jobId, { clear = true } = {}) {
+  ['opp-prog-', 'int-prog-', 'rej-prog-'].forEach(prefix => showProgSection(prefix + jobId, { clear }));
+}
+
+function showProgSection(id, { clear = true } = {}) {
   const el = document.getElementById(id);
   if (!el) return;
   el.classList.remove('hidden');
   const log = el.querySelector('.stage-log');
   const dl  = el.querySelector('.downloads');
-  if (log) log.innerHTML = '';
-  if (dl)  dl.innerHTML  = '';
+  if (clear && log) log.innerHTML = '';
+  if (clear && dl)  dl.innerHTML  = '';
 }
 
 function genBtns(jobId) {
   return document.querySelectorAll(`.gen-btn[data-id="${jobId}"], .int-gen-btn[data-id="${jobId}"], .rej-gen-btn[data-id="${jobId}"]`);
+}
+
+function setGeneratingState(jobId, label = 'Generating…') {
+  genBtns(jobId).forEach(btn => {
+    btn.disabled = true;
+    btn.textContent = label;
+  });
 }
 
 function updateBtnProgress(jobId, pct, label) {
@@ -1744,7 +1767,9 @@ function updateBtnProgress(jobId, pct, label) {
   });
 }
 
-socket.on('progress', ({ jobId, stage, status, message }) => {
+function processResumeProgress({ jobId, stage, status, message }) {
+  if (!jobId || !stage) return;
+  showAllProgSections(jobId, { clear: false });
   const baseStage = stage.split(':')[0];
   const label = STAGE_LABELS[baseStage] ?? humanizeStage(baseStage);
   const text  = message ? `${label}: ${message}` : `${label}: ${status}`;
@@ -1756,9 +1781,13 @@ socket.on('progress', ({ jobId, stage, status, message }) => {
   if (prog) updateBtnProgress(jobId, status === 'started' ? prog.started : prog.done, label);
 
   if (kind === 'error') resetBtn(jobId);
-});
+}
 
-socket.on('complete', ({ jobId, docxUrl, pdfUrl }) => {
+socket.on('progress', processResumeProgress);
+
+function processResumeComplete({ jobId, docxUrl, pdfUrl }) {
+  if (!jobId || !docxUrl) return;
+  showAllProgSections(jobId, { clear: false });
   genBtns(jobId).forEach(btn => {
     btn.style.backgroundColor = '#059669';
     btn.textContent = '✓ Complete';
@@ -1772,7 +1801,35 @@ socket.on('complete', ({ jobId, docxUrl, pdfUrl }) => {
     if (dl) dl.innerHTML = links;
   });
   setTimeout(() => resetBtn(jobId, 'Regenerate'), 1500);
-});
+}
+
+socket.on('complete', processResumeComplete);
+
+async function restoreResumeRuns() {
+  try {
+    const runs = await fetchResumeRuns();
+    for (const run of runs) restoreResumeRun(run);
+  } catch {
+    // Non-blocking: generation still runs; this only restores visible progress after refresh.
+  }
+}
+
+function restoreResumeRun(run) {
+  if (!run?.jobId || !Array.isArray(run.events) || !run.events.length) return;
+  showAllProgSections(run.jobId);
+  if (run.status === 'running') setGeneratingState(run.jobId, 'Generating…');
+  for (const event of run.events) {
+    if (event.event === 'progress') processResumeProgress(event);
+    if (event.event === 'complete') processResumeComplete(event);
+  }
+  if (run.status === 'running') {
+    const last = run.events.at(-1);
+    const baseStage = String(last?.stage || '').split(':')[0];
+    const label = STAGE_LABELS[baseStage] ?? 'Generating';
+    const prog = STAGE_PROGRESS[baseStage];
+    if (prog) updateBtnProgress(run.jobId, prog.started, label);
+  }
+}
 
 function appendLog(jobId, kind, text) {
   const color = kind === 'error' ? 'text-rose-600' : kind === 'warning' ? 'text-amber-600' : 'text-emerald-700';
@@ -1848,11 +1905,7 @@ async function saveEditModal() {
     const idx = allJobs.findIndex(j => j.id === jobId);
     if (idx !== -1) allJobs[idx] = { ...allJobs[idx], ...body };
     closeEditModal();
-    applyOppFilters();
-    renderDashboard();
-    renderPipelineBreakdown();
-    renderInterviews();
-    renderRejected();
+    renderAllViews();
   } catch (e) {
     const errEl = document.getElementById('edit-error');
     errEl.textContent = 'Save failed: ' + e.message;

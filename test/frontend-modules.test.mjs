@@ -57,6 +57,7 @@ describe('frontend ES modules', () => {
     assert.match(dashboard, /buildGmailApprovalPreview/);
     assert.match(dashboard, /Approve/);
     assert.match(dashboard, /Decline/);
+    assert.match(dashboard, /Edit selected job/);
     assert.match(dashboard, /showView\('gmail-review'\)/);
     assert.match(dashboard, /\/gmail-review/);
     assert.match(server, /\/gmail-review/);
@@ -64,6 +65,18 @@ describe('frontend ES modules', () => {
     assert.match(dashboard, /attachGmailAmbiguity/);
     assert.match(dashboard, /dismissGmailAmbiguity/);
     assert.match(api, /\/api\/gmail-jobs\/'\s*\+\s*encodeURIComponent\(threadId\)\s*\+\s*'\/attach/);
+  });
+
+  it('restores resume generation progress after page refresh', () => {
+    const dashboard = read('public/js/dashboard.js');
+    const api = read('public/js/api.js');
+    const server = read('server.mjs');
+
+    assert.match(api, /fetchResumeRuns/);
+    assert.match(server, /\/api\/resume-runs/);
+    assert.match(dashboard, /restoreResumeRuns/);
+    assert.match(dashboard, /processResumeProgress/);
+    assert.match(dashboard, /alreadyRunning/);
   });
 
   it('renders lightweight generated resume version history', () => {
