@@ -175,20 +175,25 @@ describe('Gmail ambiguity review helpers', () => {
     ]), [ambiguous]);
   });
 
-  it('builds attach fields without changing tracker status', () => {
+  it('builds attach fields and advances tracker status on approval', () => {
     const fields = buildGmailAttachFields({
       thread_id: 't1',
       company: 'Vanta',
       role: 'Customer Success Manager',
+      status: 'recruiter_screen',
       last_email_subject: 'Next steps at Vanta',
       last_email_date: '2026-05-08T12:00:00.000Z',
       last_email_snippet: 'Thanks for applying',
       gmailMatch: { ambiguous: true, confidence: 0.48, matchedBy: ['company'] },
-    }, 'job-1', '2026-05-08T13:00:00.000Z');
+    }, { id: 'job-1', status: 'applied' }, '2026-05-08T13:00:00.000Z');
 
     assert.equal(fields.last_email_subject, 'Next steps at Vanta');
+    assert.equal(fields.status, 'recruiter_screen');
     assert.equal(fields.gmailMatch.manuallyResolved, true);
     assert.equal(fields.gmailAmbiguityResolution.action, 'attached');
-    assert.equal(fields.status, undefined);
+    assert.equal(fields.gmailAmbiguityResolution.previousStatus, 'applied');
+    assert.equal(fields.gmailAmbiguityResolution.detectedStatus, 'recruiter_screen');
+    assert.equal(fields.gmailAmbiguityResolution.resolvedStatus, 'recruiter_screen');
+    assert.equal(fields.gmailAmbiguityResolution.statusChanged, true);
   });
 });

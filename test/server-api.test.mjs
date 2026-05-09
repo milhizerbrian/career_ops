@@ -31,6 +31,7 @@ fs.writeFileSync(process.env.CAREER_OPS_GMAIL_JOBS_PATH, JSON.stringify([
     thread_id: 'thread-attach',
     company: 'Acme Security',
     role: 'Senior Customer Success Manager',
+    status: 'recruiter_screen',
     last_email_subject: 'Acme next steps',
     last_email_date: '2026-05-08T12:00:00.000Z',
     last_email_snippet: 'Thanks for applying',
@@ -91,7 +92,7 @@ describe('server API routes', () => {
     assert.equal(relisted.body[0].thread_id, 'thread-attach');
   });
 
-  it('attaches ambiguous Gmail matches without changing status', async () => {
+  it('attaches ambiguous Gmail matches and advances status on approval', async () => {
     const attached = await request('/api/gmail-jobs/thread-attach/attach', {
       method: 'POST',
       body: JSON.stringify({ jobId: 'job1' }),
@@ -99,9 +100,16 @@ describe('server API routes', () => {
 
     assert.equal(attached.res.status, 200);
     assert.equal(attached.body.ok, true);
+    assert.equal(attached.body.previousStatus, 'lead');
+    assert.equal(attached.body.detectedStatus, 'recruiter_screen');
+    assert.equal(attached.body.resolvedStatus, 'recruiter_screen');
+    assert.equal(attached.body.statusChanged, true);
     const job = tracker().job1;
-    assert.equal(job.status, 'lead');
+    assert.equal(job.status, 'recruiter_screen');
     assert.equal(job.gmailAmbiguityResolution.action, 'attached');
+    assert.equal(job.gmailAmbiguityResolution.previousStatus, 'lead');
+    assert.equal(job.gmailAmbiguityResolution.detectedStatus, 'recruiter_screen');
+    assert.equal(job.gmailAmbiguityResolution.resolvedStatus, 'recruiter_screen');
   });
 
   it('persists manual workflow events', async () => {

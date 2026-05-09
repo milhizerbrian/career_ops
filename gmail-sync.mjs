@@ -18,7 +18,7 @@ import Anthropic from '@anthropic-ai/sdk';
 import { fileURLToPath } from 'url';
 import fs from 'fs';
 import path from 'path';
-import { loadTracker, updateJob, createJob } from './lib/data.mjs';
+import { loadJobById, loadTracker, updateJob, createJob } from './lib/data.mjs';
 import { writeJsonAtomic } from './lib/atomic-file.mjs';
 import { STATUS_ORDER, normalizeStatus } from './lib/status-utils.mjs';
 
@@ -743,8 +743,13 @@ export function listAmbiguousGmailJobs(jobs = loadGmailJobs()) {
   return jobs.filter(job => job?.gmailMatch?.ambiguous === true && !job.gmailResolution);
 }
 
-export function buildGmailAttachFields(event, jobId, resolvedAt = new Date().toISOString()) {
+export function buildGmailAttachFields(event, job, resolvedAt = new Date().toISOString()) {
+  const jobId = typeof job === 'string' ? job : job?.id;
+  const previousStatus = normalizeStatus(typeof job === 'string' ? 'lead' : job?.status);
+  const detectedStatus = normalizeStatus(event.status);
+  const resolvedStatus = advanceStatus(previousStatus, detectedStatus);
   return {
+    status: resolvedStatus,
     last_email_subject: event.last_email_subject || '',
     last_email_date: event.last_email_date || '',
     last_email_snippet: event.last_email_snippet || '',
@@ -763,6 +768,10 @@ export function buildGmailAttachFields(event, jobId, resolvedAt = new Date().toI
       detectedCompany: event.company || '',
       detectedTitle: event.role || '',
       confidence: event.gmailMatch?.confidence || 0,
+      previousStatus,
+      detectedStatus,
+      resolvedStatus,
+      statusChanged: resolvedStatus !== previousStatus,
     },
     date_updated: new Date(resolvedAt).toISOString().slice(0, 10),
   };
@@ -793,9 +802,27 @@ export function attachGmailAmbiguityToJob(threadId, jobId) {
   if (event?.gmailMatch?.ambiguous !== true) throw new Error('Gmail event is not ambiguous');
 
   const resolvedAt = new Date().toISOString();
-  updateJob(jobId, buildGmailAttachFields(event, jobId, resolvedAt));
-  markGmailJobResolved(threadId, { action: 'attached', jobId, resolvedAt });
-  return { ok: true, threadId, jobId };
+  const job = loadJobById(jobId);
+  const fields = buildGmailAttachFields(event, job, resolvedAt);
+  updateJob(jobId, fields);
+  markGmailJobResolved(threadId, {
+    action: 'attached',
+    jobId,
+    resolvedAt,
+    previousStatus: fields.gmailAmbiguityResolution.previousStatus,
+    detectedStatus: fields.gmailAmbiguityResolution.detectedStatus,
+    resolvedStatus: fields.gmailAmbiguityResolution.resolvedStatus,
+    statusChanged: fields.gmailAmbiguityResolution.statusChanged,
+  });
+  return {
+    ok: true,
+    threadId,
+    jobId,
+    previousStatus: fields.gmailAmbiguityResolution.previousStatus,
+    detectedStatus: fields.gmailAmbiguityResolution.detectedStatus,
+    resolvedStatus: fields.gmailAmbiguityResolution.resolvedStatus,
+    statusChanged: fields.gmailAmbiguityResolution.statusChanged,
+  };
 }
 
 export function dismissGmailAmbiguity(threadId) {

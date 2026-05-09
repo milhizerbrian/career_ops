@@ -280,9 +280,7 @@ function renderGmailAmbiguities() {
   });
   listEl.querySelectorAll('.gmail-candidate-select').forEach(select => {
     select.addEventListener('change', () => {
-      const label = select.closest('[data-thread-id]')?.querySelector('.gmail-selected-job-label');
-      const selectedText = select.selectedOptions?.[0]?.textContent || 'No candidate selected';
-      if (label) label.textContent = selectedText.replace(/\s*\(\d+%\)\s*$/, '');
+      updateGmailApprovalPreview(select);
     });
   });
 }
@@ -291,6 +289,8 @@ function renderGmailAmbiguityCard(item) {
   const threadId = item.thread_id || '';
   const candidates = Array.isArray(item.matchCandidates) ? item.matchCandidates : [];
   const selected = candidates[0] || null;
+  const selectedJob = selected ? allJobs.find(job => job.id === selected.id) : null;
+  const initialPreview = buildGmailApprovalPreview(item, selectedJob, selected);
   const emailDate = item.last_email_date
     ? new Date(item.last_email_date).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
     : 'Unknown time';
@@ -303,14 +303,21 @@ function renderGmailAmbiguityCard(item) {
     : '<div class="text-[11px] text-slate-400">No candidates available.</div>';
   const options = candidates.map(c => {
     const label = `${c.company || 'Unknown'} — ${c.title || 'Unknown'} (${formatConfidence(c.confidence)})`;
-    return `<option value="${esc(c.id)}">${esc(label)}</option>`;
+    const candidateJob = allJobs.find(job => job.id === c.id);
+    const preview = buildGmailApprovalPreview(item, candidateJob, c);
+    return `<option value="${esc(c.id)}"
+      data-job-label="${esc(preview.jobLabel)}"
+      data-current-status="${esc(preview.currentStatusLabel)}"
+      data-detected-status="${esc(preview.detectedStatusLabel)}"
+      data-resolved-status="${esc(preview.resolvedStatusLabel)}"
+      data-status-change="${esc(preview.statusChangeLabel)}">${esc(label)}</option>`;
   }).join('');
   const selectedLabel = selected
     ? `${selected.company || 'Unknown'} — ${selected.title || 'Unknown'}`
     : 'No candidate selected';
 
   return `<div class="border border-slate-200 rounded-lg p-3" data-thread-id="${esc(threadId)}">
-    <div class="grid grid-cols-1 xl:grid-cols-[minmax(0,1.1fr)_minmax(280px,0.9fr)_220px] gap-4 items-start">
+    <div class="grid grid-cols-1 xl:grid-cols-[minmax(0,1fr)_minmax(260px,0.9fr)_210px] gap-2 items-start">
       <div class="min-w-0">
         <p class="text-[10px] font-bold uppercase tracking-wide text-slate-400 mb-2">Email</p>
         <p class="text-xs font-semibold text-slate-700 truncate">${esc(item.company || 'Unknown company')}</p>
@@ -327,9 +334,14 @@ function renderGmailAmbiguityCard(item) {
         <p class="text-[10px] font-bold uppercase tracking-wide text-slate-400 mb-2">If approved</p>
         <p class="text-xs text-slate-600 leading-relaxed">
           Attach this email to <span class="font-semibold text-slate-800 gmail-selected-job-label">${esc(selectedLabel)}</span>.
-          Save subject, sender context, email date, snippet, confidence, and manual resolution metadata.
+          Save subject, sender context, email date, snippet, confidence, and manual resolution metadata on the job.
         </p>
-        <p class="text-[11px] text-slate-400 mt-2">Job status will not change automatically.</p>
+        <p class="text-xs text-slate-600 mt-2">
+          Status: <span class="font-semibold text-slate-800 gmail-status-change-label">${esc(initialPreview.statusChangeLabel)}</span>
+        </p>
+        <p class="text-[11px] text-slate-400 mt-1">
+          Gmail detected <span class="gmail-detected-status">${esc(initialPreview.detectedStatusLabel)}</span>; approval updates the selected job to <span class="gmail-resolved-status">${esc(initialPreview.resolvedStatusLabel)}</span>.
+        </p>
         <div class="mt-2 space-y-0.5">${candidateRows}</div>
         <p class="gmail-ambiguity-error hidden text-xs text-rose-600 mt-2"></p>
       </div>
@@ -345,6 +357,53 @@ function renderGmailAmbiguityCard(item) {
       </div>
     </div>
   </div>`;
+}
+
+function normalizeDashboardStatus(status) {
+  const value = String(status || 'lead').toLowerCase();
+  return STATUS_ORDER.includes(value) ? value : 'lead';
+}
+
+function advanceDashboardStatus(currentStatus, incomingStatus) {
+  const current = normalizeDashboardStatus(currentStatus);
+  const incoming = normalizeDashboardStatus(incomingStatus);
+  return STATUS_ORDER.indexOf(incoming) > STATUS_ORDER.indexOf(current) ? incoming : current;
+}
+
+function statusDisplay(status) {
+  return humanizeStage(normalizeDashboardStatus(status));
+}
+
+function buildGmailApprovalPreview(item, job, candidate) {
+  const currentStatus = normalizeDashboardStatus(job?.status);
+  const detectedStatus = normalizeDashboardStatus(item?.status);
+  const resolvedStatus = advanceDashboardStatus(currentStatus, detectedStatus);
+  const currentStatusLabel = statusDisplay(currentStatus);
+  const detectedStatusLabel = statusDisplay(detectedStatus);
+  const resolvedStatusLabel = statusDisplay(resolvedStatus);
+  return {
+    jobLabel: candidate ? `${candidate.company || 'Unknown'} — ${candidate.title || 'Unknown'}` : 'No candidate selected',
+    currentStatusLabel,
+    detectedStatusLabel,
+    resolvedStatusLabel,
+    statusChangeLabel: currentStatus === resolvedStatus
+      ? `${currentStatusLabel} → ${resolvedStatusLabel} (no change)`
+      : `${currentStatusLabel} → ${resolvedStatusLabel}`,
+  };
+}
+
+function updateGmailApprovalPreview(select) {
+  const card = select.closest('[data-thread-id]');
+  const option = select.selectedOptions?.[0];
+  if (!card || !option) return;
+  const setText = (selector, value) => {
+    const el = card.querySelector(selector);
+    if (el) el.textContent = value;
+  };
+  setText('.gmail-selected-job-label', option.dataset.jobLabel || option.textContent.replace(/\s*\(\d+%\)\s*$/, ''));
+  setText('.gmail-status-change-label', option.dataset.statusChange || '');
+  setText('.gmail-detected-status', option.dataset.detectedStatus || '');
+  setText('.gmail-resolved-status', option.dataset.resolvedStatus || '');
 }
 
 async function attachSelectedGmailMatch(btn) {
