@@ -39,14 +39,18 @@ describe('frontend ES modules', () => {
     assert.match(dashboard, /window\.setOppSort = setOppSort/);
   });
 
-  it('wires a minimal ambiguous Gmail review panel', () => {
+  it('wires a standalone ambiguous Gmail review page', () => {
     const html = read('public/index.html');
     const dashboard = read('public/js/dashboard.js');
     const api = read('public/js/api.js');
 
+    assert.match(html, /data-view="gmail-review"/);
+    assert.match(html, /id="view-gmail-review"/);
     assert.match(html, /id="gmail-ambiguity-panel"/);
+    assert.match(html, /AMBIGUOUS EMAIL MATCHES/);
     assert.match(dashboard, /fetchAmbiguousGmailJobs/);
     assert.match(dashboard, /renderGmailAmbiguities/);
+    assert.match(dashboard, /showView\('gmail-review'\)/);
     assert.match(dashboard, /attachGmailAmbiguity/);
     assert.match(dashboard, /dismissGmailAmbiguity/);
     assert.match(api, /\/api\/gmail-jobs\/'\s*\+\s*encodeURIComponent\(threadId\)\s*\+\s*'\/attach/);

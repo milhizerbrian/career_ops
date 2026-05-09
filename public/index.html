@@ -132,6 +132,9 @@
       <button data-view="dashboard"  class="nav-btn nav-active   w-full flex items-center gap-3 px-3 py-2 rounded-lg transition-all text-sm font-medium">
         <span class="material-symbols-outlined text-xl">dashboard</span><span>Dashboard</span>
       </button>
+      <button data-view="gmail-review" class="nav-btn nav-inactive w-full flex items-center gap-3 px-3 py-2 rounded-lg transition-all text-sm font-medium">
+        <span class="material-symbols-outlined text-xl">mark_email_unread</span><span>Gmail Review</span>
+      </button>
       <button data-view="interviews" class="nav-btn nav-inactive w-full flex items-center gap-3 px-3 py-2 rounded-lg transition-all text-sm font-medium">
         <span class="material-symbols-outlined text-xl">event_available</span><span>Interviews</span>
       </button>
@@ -224,17 +227,6 @@
           <div id="pipeline-breakdown" class="flex flex-wrap gap-3"></div>
         </div>
 
-        <!-- Ambiguous Gmail matches -->
-        <div id="gmail-ambiguity-panel" class="hidden bg-white rounded-xl border border-amber-200 shadow-sm p-4 mb-4">
-          <div class="flex items-center justify-between gap-3 mb-3">
-            <div>
-              <p class="text-label-caps font-label-caps text-amber-700">GMAIL MATCH REVIEW</p>
-              <p class="text-xs text-slate-500" id="gmail-ambiguity-count"></p>
-            </div>
-          </div>
-          <div id="gmail-ambiguity-list" class="space-y-3"></div>
-        </div>
-
         <!-- Filter bar -->
         <div class="bg-white rounded-xl border border-slate-200 shadow-sm p-4 mb-4 flex flex-wrap gap-3 items-center">
           <select id="opp-status-filter"
@@ -321,6 +313,35 @@
             </div>
           </div>
       </div><!-- /view-dashboard -->
+
+      <!-- ═══════════════════════════════════════════════════════════════════
+           GMAIL REVIEW VIEW
+           ═══════════════════════════════════════════════════════════════════ -->
+      <div id="view-gmail-review" hidden>
+
+        <div class="flex flex-col md:flex-row md:items-center justify-between gap-2 mb-4">
+          <div>
+            <h2 class="text-h1 font-h1 text-on-surface">Gmail Match Review</h2>
+            <p class="text-body-md text-slate-500" id="gmail-ambiguity-count">Loading ambiguous matches…</p>
+          </div>
+        </div>
+
+        <div id="gmail-ambiguity-panel" class="bg-white rounded-xl border border-amber-200 shadow-sm p-4">
+          <div class="flex items-center justify-between gap-3 mb-3">
+            <div>
+              <p class="text-label-caps font-label-caps text-amber-700">AMBIGUOUS EMAIL MATCHES</p>
+              <p class="text-xs text-slate-500">Attach each email to the right job or dismiss it without changing job status.</p>
+            </div>
+            <span class="material-symbols-outlined text-amber-500">mark_email_unread</span>
+          </div>
+          <div id="gmail-ambiguity-list" class="space-y-3"></div>
+          <div id="gmail-ambiguity-empty" class="hidden p-12 text-center text-slate-400">
+            <span class="material-symbols-outlined text-4xl mb-2 block">mark_email_read</span>
+            No ambiguous Gmail matches need review.
+          </div>
+        </div>
+
+      </div><!-- /view-gmail-review -->
 
       <!-- ═══════════════════════════════════════════════════════════════════
            INTERVIEWS VIEW

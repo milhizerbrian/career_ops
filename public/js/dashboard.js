@@ -60,7 +60,7 @@ async function init() {
 }
 
 // ─── Navigation ───────────────────────────────────────────────────────────────
-const VIEWS = ['dashboard', 'interviews', 'rejected'];
+const VIEWS = ['dashboard', 'gmail-review', 'interviews', 'rejected'];
 
 function showView(name) {
   VIEWS.forEach(v => {
@@ -209,7 +209,7 @@ function buildHealthSummaryCounts() {
 
 function applyHealthSummaryFilter(filter) {
   if (filter === 'gmail_ambiguity') {
-    document.getElementById('gmail-ambiguity-panel')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    showView('gmail-review');
     return;
   }
   activeHealthFilter = activeHealthFilter === filter ? '' : filter;
@@ -263,12 +263,13 @@ function renderGmailAmbiguities() {
   const panel = document.getElementById('gmail-ambiguity-panel');
   const listEl = document.getElementById('gmail-ambiguity-list');
   const countEl = document.getElementById('gmail-ambiguity-count');
+  const emptyEl = document.getElementById('gmail-ambiguity-empty');
   if (!panel || !listEl || !countEl) return;
 
-  panel.classList.toggle('hidden', ambiguousGmailJobs.length === 0);
   countEl.textContent = ambiguousGmailJobs.length
     ? `${ambiguousGmailJobs.length} ambiguous email match${ambiguousGmailJobs.length !== 1 ? 'es' : ''} need review`
-    : '';
+    : 'No ambiguous Gmail matches need review.';
+  if (emptyEl) emptyEl.classList.toggle('hidden', ambiguousGmailJobs.length !== 0);
   listEl.innerHTML = ambiguousGmailJobs.map(renderGmailAmbiguityCard).join('');
 
   listEl.querySelectorAll('.gmail-attach-btn').forEach(btn => {
@@ -345,6 +346,7 @@ async function dismissSelectedGmailMatch(btn) {
   await resolveGmailMatchAction(btn, async () => {
     await dismissGmailAmbiguity(threadId);
     ambiguousGmailJobs = ambiguousGmailJobs.filter(item => item.thread_id !== threadId);
+    renderWorkflowSummary();
     renderGmailAmbiguities();
   });
 }
