@@ -59,14 +59,15 @@ describe('frontend ES modules', () => {
     assert.match(dashboard, /resumeVersionScoreLabel/);
   });
 
-  it('wires a lightweight brag doc quality coach panel', () => {
+  it('does not render the brag doc quality coach on the dashboard', () => {
     const html = read('public/index.html');
     const dashboard = read('public/js/dashboard.js');
     const api = read('public/js/api.js');
 
-    assert.match(html, /id="brag-quality-panel"/);
-    assert.match(dashboard, /fetchBragQuality/);
-    assert.match(dashboard, /renderBragQuality/);
+    assert.doesNotMatch(html, /BRAG DOC COACH/);
+    assert.doesNotMatch(html, /id="brag-quality-panel"/);
+    assert.doesNotMatch(dashboard, /fetchBragQuality/);
+    assert.doesNotMatch(dashboard, /renderBragQuality/);
     assert.match(api, /\/api\/brag-quality/);
   });
 

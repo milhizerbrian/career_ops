@@ -5,7 +5,6 @@ import {
   dismissGmailAmbiguity,
   evaluateUrl,
   fetchAmbiguousGmailJobs,
-  fetchBragQuality,
   fetchDashboard,
   generateContactOutreachDraft,
   patchJob,
@@ -22,7 +21,6 @@ let allJobs    = [];
 let userProfile = {};
 let dashboardMeta = { builtAt: null, lastScanAt: null };
 let ambiguousGmailJobs = [];
-let bragQuality = null;
 let workflowSummary = { urgentFollowUps: 0, staleJobs: 0, upcomingInterviews: 0 };
 const socket   = io();
 
@@ -42,14 +40,12 @@ function visibleDashboardJobs(jobs) {
 // ─── Boot ─────────────────────────────────────────────────────────────────────
 async function init() {
   try {
-    const [data, gmailJobs, quality] = await Promise.all([
+    const [data, gmailJobs] = await Promise.all([
       fetchDashboard(),
       fetchAmbiguousGmailJobs().catch(() => []),
-      fetchBragQuality().catch(() => null),
     ]);
     allJobs    = data.jobs || [];
     ambiguousGmailJobs = gmailJobs || [];
-    bragQuality = quality;
     userProfile = data.profile || {};
     workflowSummary = data.workflowSummary || workflowSummary;
     dashboardMeta = createDashboardMeta(data);
@@ -166,7 +162,6 @@ function renderDashboard(builtAt = dashboardMeta.builtAt, lastScanAt = dashboard
 
   renderWorkflowSummary();
   renderPipelineBreakdown();
-  renderBragQuality();
   renderGmailAmbiguities();
 }
 
@@ -262,48 +257,6 @@ function jobReadyToApply(job) {
 
 function jobNeedsInterviewPrep(job) {
   return job._workflow?.nextBestAction === 'prep_interview' || INTERVIEW_STATUSES.has(job.status || '');
-}
-
-function renderBragQuality() {
-  const panel = document.getElementById('brag-quality-panel');
-  const summaryEl = document.getElementById('brag-quality-summary');
-  const listEl = document.getElementById('brag-quality-list');
-  if (!panel || !summaryEl || !listEl) return;
-
-  const categories = Array.isArray(bragQuality?.categories) ? bragQuality.categories : [];
-  if (!categories.length) {
-    panel.classList.add('hidden');
-    return;
-  }
-
-  const advisory = categories.filter(category => category.status !== 'strong');
-  panel.classList.remove('hidden');
-  summaryEl.textContent = advisory.length
-    ? `${advisory.length} source evidence ${advisory.length === 1 ? 'area needs' : 'areas need'} detail`
-    : 'All tracked source evidence categories look covered.';
-
-  const visible = (advisory.length ? advisory : categories).slice(0, 6);
-  listEl.innerHTML = visible.map(renderBragQualityCard).join('');
-}
-
-function renderBragQualityCard(category) {
-  const statusCls = category.status === 'missing'
-    ? 'bg-rose-50 text-rose-700'
-    : category.status === 'weak'
-      ? 'bg-amber-50 text-amber-700'
-      : 'bg-emerald-50 text-emerald-700';
-  const prompt = category.prompts?.[0] || 'Covered.';
-  const signals = Array.isArray(category.signals) && category.signals.length
-    ? `<p class="text-[11px] text-slate-400 mt-1 truncate">Signals: ${category.signals.map(esc).join(', ')}</p>`
-    : '';
-  return `<div class="border border-slate-200 rounded-lg p-3">
-    <div class="flex items-center justify-between gap-2 mb-1">
-      <p class="text-xs font-semibold text-slate-700">${esc(category.label)}</p>
-      <span class="text-[10px] font-bold uppercase tracking-wide rounded px-1.5 py-0.5 ${statusCls}">${esc(category.status)}</span>
-    </div>
-    <p class="text-xs text-slate-500 leading-relaxed">${esc(prompt)}</p>
-    ${signals}
-  </div>`;
 }
 
 function renderGmailAmbiguities() {
