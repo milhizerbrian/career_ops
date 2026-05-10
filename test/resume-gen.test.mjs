@@ -123,6 +123,28 @@ describe('validateResumeQuality', () => {
 });
 
 describe('DOCX-first resume finish', () => {
+  it('repairs weak generated bullets before failing the quality gate', async () => {
+    await withEnv({ ANTHROPIC_API_KEY: '', RESUME_PDF_EXPORT: '0' }, async () => {
+      const state = finishState(`quality-repair-${Date.now()}`);
+      state.fields = [
+        'PROFESSIONAL_SUMMARY',
+        'KEY_ACHIEVEMENT_1',
+        'JOB_1_CONTEXT',
+        'JOB_1_BULLET_1',
+        'JOB_2_BULLET_3',
+      ];
+      state.replacements = {
+        ...VALID_REPLACEMENTS,
+        JOB_2_BULLET_3: 'Managed customer relationships and supported implementation planning for accounts.',
+      };
+
+      const result = await generateResumeFinish(state);
+
+      assert.ok(result.docxUrl.endsWith('.docx'));
+      assert.match(state.io.events.map(event => event.payload?.stage).join('\n'), /quality-repair/);
+    });
+  });
+
   it('succeeds with a DOCX result when PDF export is disabled', async () => {
     await withEnv({ ANTHROPIC_API_KEY: '', RESUME_PDF_EXPORT: '0' }, async () => {
       const state = finishState(`docx-only-${Date.now()}`);
