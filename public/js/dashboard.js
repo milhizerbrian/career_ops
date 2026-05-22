@@ -1768,6 +1768,17 @@ function renderWorkspaceView(viewName) {
   if (viewName === 'settings') renderSettingsWorkspace();
 }
 
+function workspaceLoadingPanel(label = 'Loading workspace…') {
+  return `<div class="p-8 text-sm text-slate-500 flex items-center gap-2">
+    <span class="material-symbols-outlined text-base animate-spin">progress_activity</span>
+    <span>${esc(label)}</span>
+  </div>`;
+}
+
+function workspaceErrorPanel(message) {
+  return `<div class="p-4 text-sm text-rose-600 bg-rose-50 border border-rose-100 rounded-lg">${esc(message)}</div>`;
+}
+
 function showJobDetail(jobId, { push = true } = {}) {
   currentJobDetailId = jobId;
   showView('jobs', { push: false });
@@ -1911,6 +1922,12 @@ async function renderResumeWorkspace() {
   const countEl = document.getElementById('resume-count-label');
   if (!queueRoot || !versionsRoot || !qualityRoot || !countEl) return;
   try {
+    if (!resumeWorkspace) {
+      countEl.textContent = 'Loading resume queue…';
+      queueRoot.innerHTML = workspaceLoadingPanel('Loading resume queue…');
+      versionsRoot.innerHTML = workspaceLoadingPanel('Loading version history…');
+      qualityRoot.innerHTML = workspaceLoadingPanel('Loading source quality…');
+    }
     const data = await loadResumeWorkspace();
     const filter = document.getElementById('resume-filter')?.value || '';
     let queue = data.queue || [];
@@ -1925,7 +1942,9 @@ async function renderResumeWorkspace() {
     queueRoot.querySelectorAll('.gen-btn').forEach(btn => btn.addEventListener('click', () => triggerGenerate(btn.dataset.id, btn)));
   } catch (e) {
     countEl.textContent = 'Resume workspace unavailable';
-    queueRoot.innerHTML = `<div class="p-4 text-sm text-rose-600">${esc(e.message)}</div>`;
+    queueRoot.innerHTML = workspaceErrorPanel(e.message);
+    versionsRoot.innerHTML = '';
+    qualityRoot.innerHTML = '';
   }
 }
 
@@ -2005,23 +2024,41 @@ function renderSourceQualityCoach(sourceQuality) {
 async function renderOutreachWorkspace() {
   const countEl = document.getElementById('outreach-count-label');
   if (!countEl) return;
+  const summaryRoot = document.getElementById('outreach-summary-root');
+  const dueRoot = document.getElementById('outreach-due-root');
+  const draftsRoot = document.getElementById('outreach-drafts-root');
+  const sentRoot = document.getElementById('outreach-sent-root');
+  const repliesRoot = document.getElementById('outreach-replies-root');
+  if (!summaryRoot || !dueRoot || !draftsRoot || !sentRoot || !repliesRoot) return;
   try {
+    if (!outreachWorkspace) {
+      countEl.textContent = 'Loading outreach…';
+      summaryRoot.innerHTML = '';
+      dueRoot.innerHTML = workspaceLoadingPanel('Loading due follow-ups…');
+      draftsRoot.innerHTML = workspaceLoadingPanel('Loading drafts…');
+      sentRoot.innerHTML = workspaceLoadingPanel('Loading sent outreach…');
+      repliesRoot.innerHTML = workspaceLoadingPanel('Loading replies…');
+    }
     if (!outreachWorkspace) outreachWorkspace = await fetchOutreachWorkspace();
     const data = outreachWorkspace;
     countEl.textContent = `${data.dueFollowUps.length} due · ${data.drafts.length} draft${data.drafts.length === 1 ? '' : 's'} · ${data.replies.length} repl${data.replies.length === 1 ? 'y' : 'ies'}`;
-    document.getElementById('outreach-summary-root').innerHTML = [
+    summaryRoot.innerHTML = [
       workspaceMetricCard('Due', data.dueFollowUps.length, 'text-amber-700'),
       workspaceMetricCard('Drafts', data.drafts.length, 'text-blue-700'),
       workspaceMetricCard('Sent', data.sentOutreach.length, 'text-slate-800'),
       workspaceMetricCard('Replies', data.replies.length, 'text-emerald-700'),
     ].join('');
-    document.getElementById('outreach-due-root').innerHTML = renderOutreachList('DUE FOLLOW-UPS', data.dueFollowUps, renderOutreachContactItem);
-    document.getElementById('outreach-drafts-root').innerHTML = renderOutreachList('DRAFTS', data.drafts, renderDraftItem);
-    document.getElementById('outreach-sent-root').innerHTML = renderOutreachList('SENT OUTREACH', data.sentOutreach, renderOutreachContactItem);
-    document.getElementById('outreach-replies-root').innerHTML = renderOutreachList('REPLIES', data.replies, renderOutreachContactItem);
+    dueRoot.innerHTML = renderOutreachList('DUE FOLLOW-UPS', data.dueFollowUps, renderOutreachContactItem);
+    draftsRoot.innerHTML = renderOutreachList('DRAFTS', data.drafts, renderDraftItem);
+    sentRoot.innerHTML = renderOutreachList('SENT OUTREACH', data.sentOutreach, renderOutreachContactItem);
+    repliesRoot.innerHTML = renderOutreachList('REPLIES', data.replies, renderOutreachContactItem);
     bindOutreachWorkspaceActions(document.getElementById('view-outreach'));
   } catch (e) {
     countEl.textContent = 'Outreach unavailable';
+    dueRoot.innerHTML = workspaceErrorPanel(e.message);
+    draftsRoot.innerHTML = '';
+    sentRoot.innerHTML = '';
+    repliesRoot.innerHTML = '';
   }
 }
 
@@ -2091,6 +2128,8 @@ async function renderContactsWorkspace() {
   if (!root || !countEl) return;
   try {
     if (!contactsWorkspace) {
+      countEl.textContent = 'Loading contacts…';
+      root.innerHTML = workspaceLoadingPanel('Loading contacts…');
       contactsWorkspace = await fetchContactsWorkspace();
       populateWorkspaceSelect('contacts-relationship-filter', contactsWorkspace.filters.relationshipTypes, 'All relationships');
       populateWorkspaceSelect('contacts-response-filter', contactsWorkspace.filters.responseStatuses, 'All response states');
@@ -2107,7 +2146,7 @@ async function renderContactsWorkspace() {
     bindContactsWorkspaceActions(root, contacts);
   } catch (e) {
     countEl.textContent = 'Contacts unavailable';
-    root.innerHTML = `<div class="p-4 text-sm text-rose-600">${esc(e.message)}</div>`;
+    root.innerHTML = workspaceErrorPanel(e.message);
   }
 }
 
@@ -2158,48 +2197,79 @@ function bindContactsWorkspaceActions(root, contacts) {
 async function renderAnalyticsWorkspace() {
   const countEl = document.getElementById('analytics-count-label');
   if (!countEl) return;
+  const summaryRoot = document.getElementById('analytics-summary-root');
+  const stageRoot = document.getElementById('analytics-stage-root');
+  const resumeRoot = document.getElementById('analytics-resume-root');
+  const followupRoot = document.getElementById('analytics-followup-root');
+  const outreachRoot = document.getElementById('analytics-outreach-root');
+  if (!summaryRoot || !stageRoot || !resumeRoot || !followupRoot || !outreachRoot) return;
   try {
+    if (!analyticsSummary) {
+      countEl.textContent = 'Loading pipeline health…';
+      summaryRoot.innerHTML = '';
+      stageRoot.innerHTML = workspaceLoadingPanel('Loading pipeline distribution…');
+      resumeRoot.innerHTML = workspaceLoadingPanel('Loading resume scores…');
+      followupRoot.innerHTML = workspaceLoadingPanel('Loading follow-up debt…');
+      outreachRoot.innerHTML = workspaceLoadingPanel('Loading outreach status…');
+    }
     if (!analyticsSummary) analyticsSummary = await fetchAnalyticsSummary();
     const data = analyticsSummary;
     countEl.textContent = `${data.activeOpportunities} active opportunities · average ATS ${data.averageActiveAtsScore ?? '—'}%`;
-    document.getElementById('analytics-summary-root').innerHTML = [
+    summaryRoot.innerHTML = [
       workspaceMetricCard('Active', data.activeOpportunities, 'text-slate-800'),
       workspaceMetricCard('Avg ATS', data.averageActiveAtsScore == null ? '—' : data.averageActiveAtsScore + '%', 'text-blue-700'),
       workspaceMetricCard('Follow-ups', data.followUpDebt.count, 'text-amber-700'),
       workspaceMetricCard('Stale', data.staleLeads.count, 'text-rose-700'),
     ].join('');
-    document.getElementById('analytics-stage-root').innerHTML = renderKeyValuePanel('PIPELINE DISTRIBUTION', data.stageDistribution);
-    document.getElementById('analytics-resume-root').innerHTML = renderKeyValuePanel('RESUME SCORE DISTRIBUTION', data.resumeScoreDistribution);
-    document.getElementById('analytics-followup-root').innerHTML = renderOutreachList('FOLLOW-UP DEBT', data.followUpDebt.items || [], renderOutreachContactItem);
-    document.getElementById('analytics-outreach-root').innerHTML = renderKeyValuePanel('OUTREACH RESPONSE STATUS', data.outreachResponseStatus);
+    stageRoot.innerHTML = renderKeyValuePanel('PIPELINE DISTRIBUTION', data.stageDistribution);
+    resumeRoot.innerHTML = renderKeyValuePanel('RESUME SCORE DISTRIBUTION', data.resumeScoreDistribution);
+    followupRoot.innerHTML = renderOutreachList('FOLLOW-UP DEBT', data.followUpDebt.items || [], renderOutreachContactItem);
+    outreachRoot.innerHTML = renderKeyValuePanel('OUTREACH RESPONSE STATUS', data.outreachResponseStatus);
   } catch (e) {
     countEl.textContent = 'Analytics unavailable';
+    stageRoot.innerHTML = workspaceErrorPanel(e.message);
+    resumeRoot.innerHTML = '';
+    followupRoot.innerHTML = '';
+    outreachRoot.innerHTML = '';
   }
 }
 
 async function renderSettingsWorkspace() {
   const countEl = document.getElementById('settings-count-label');
   if (!countEl) return;
+  const pathsRoot = document.getElementById('settings-paths-root');
+  const filesRoot = document.getElementById('settings-files-root');
+  const healthRoot = document.getElementById('settings-health-root');
+  if (!pathsRoot || !filesRoot || !healthRoot) return;
   try {
+    if (!settingsHealth) {
+      countEl.textContent = 'Loading local health…';
+      pathsRoot.innerHTML = workspaceLoadingPanel('Loading local paths…');
+      filesRoot.innerHTML = workspaceLoadingPanel('Loading file state…');
+      healthRoot.innerHTML = workspaceLoadingPanel('Running health checks…');
+    }
     if (!settingsHealth) settingsHealth = await fetchSettingsHealth();
     const data = settingsHealth;
     const failures = (data.checks || []).filter(check => check.status === 'FAIL').length;
     const warnings = (data.checks || []).filter(check => check.status === 'WARN').length;
     countEl.textContent = `${failures} failures · ${warnings} warnings · secrets hidden`;
-    document.getElementById('settings-paths-root').innerHTML = `<p class="text-label-caps font-label-caps text-slate-500 mb-3">LOCAL PATHS</p>
+    pathsRoot.innerHTML = `<p class="text-label-caps font-label-caps text-slate-500 mb-3">LOCAL PATHS</p>
       <div class="grid grid-cols-2 gap-2 text-xs">${Object.entries(data.paths || {}).map(([key, value]) => `<div class="border border-slate-100 rounded-lg p-2"><p class="font-semibold text-slate-500">${esc(statusDisplayLabel(key))}</p><p class="text-slate-700 break-all">${esc(value)}</p></div>`).join('')}</div>`;
-    document.getElementById('settings-files-root').innerHTML = `<p class="text-label-caps font-label-caps text-slate-500 mb-3">CONFIG AND DATA FILES</p>
+    filesRoot.innerHTML = `<p class="text-label-caps font-label-caps text-slate-500 mb-3">CONFIG AND DATA FILES</p>
       <div class="divide-y divide-slate-100">${(data.files || []).map(file => `<div class="py-2 flex items-center justify-between gap-3">
         <div class="min-w-0"><p class="text-xs font-semibold text-slate-700">${esc(file.label)}</p><p class="text-[11px] text-slate-400 break-all">${esc(file.path)}</p></div>
         <span class="text-[10px] font-bold uppercase rounded px-2 py-0.5 ${file.present ? 'bg-emerald-50 text-emerald-700' : 'bg-rose-50 text-rose-700'}">${file.present ? 'Present' : 'Missing'}</span>
       </div>`).join('')}</div>`;
-    document.getElementById('settings-health-root').innerHTML = `<p class="text-label-caps font-label-caps text-slate-500 mb-3">HEALTH CHECKS</p>
+    healthRoot.innerHTML = `<p class="text-label-caps font-label-caps text-slate-500 mb-3">HEALTH CHECKS</p>
       <div class="divide-y divide-slate-100">${(data.checks || []).map(check => `<div class="py-2 flex items-start justify-between gap-3">
         <div><p class="text-xs font-semibold text-slate-700">${esc(check.name)}</p><p class="text-[11px] text-slate-500">${esc(check.message)}</p></div>
         <span class="text-[10px] font-bold uppercase rounded px-2 py-0.5 ${healthStatusClass(check.status)}">${esc(check.status)}</span>
       </div>`).join('')}</div>`;
   } catch (e) {
     countEl.textContent = 'Settings unavailable';
+    pathsRoot.innerHTML = workspaceErrorPanel(e.message);
+    filesRoot.innerHTML = '';
+    healthRoot.innerHTML = '';
   }
 }
 
