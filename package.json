@@ -16,7 +16,8 @@
     "gmail-sync": "node gmail-sync.mjs",
     "health": "node scripts/health-check.mjs",
     "enrich:brag": "node scripts/enrich-brag-doc.mjs",
-    "coach:brag": "node scripts/brag-quality.mjs"
+    "coach:brag": "node scripts/brag-quality.mjs",
+    "scrape-contacts": "node scripts/scrape-linkedin-contacts.mjs"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.91.0",
