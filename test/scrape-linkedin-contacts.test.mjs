@@ -188,3 +188,35 @@ describe('normalizeLinkedInUrl', () => {
     assert.equal(normalizeLinkedInUrl(''), '');
   });
 });
+
+import {
+  isAuthWall,
+  isRateLimited,
+} from '../scripts/scrape-linkedin-contacts.mjs';
+
+describe('isAuthWall', () => {
+  it('detects /login redirect', () => {
+    assert.equal(isAuthWall('https://www.linkedin.com/login?session_redirect=...'), true);
+  });
+  it('detects /authwall redirect', () => {
+    assert.equal(isAuthWall('https://www.linkedin.com/authwall?trk=bf'), true);
+  });
+  it('detects /checkpoint redirect', () => {
+    assert.equal(isAuthWall('https://www.linkedin.com/checkpoint/lg/login-submit'), true);
+  });
+  it('passes on a valid search results URL', () => {
+    assert.equal(isAuthWall('https://www.linkedin.com/search/results/people/?keywords=customer+success'), false);
+  });
+});
+
+describe('isRateLimited', () => {
+  it('detects CAPTCHA page content', () => {
+    assert.equal(isRateLimited('<html><body>captcha required</body></html>'), true);
+  });
+  it('detects unusual activity message', () => {
+    assert.equal(isRateLimited('<html><body>unusual activity detected</body></html>'), true);
+  });
+  it('passes on a normal results page', () => {
+    assert.equal(isRateLimited('<html><body><ul class="reusable-search"></ul></body></html>'), false);
+  });
+});

@@ -82,3 +82,12 @@ export function parseContactCards(html) {
 
   return contacts;
 }
+
+export function isAuthWall(url) {
+  return /\/(login|authwall|checkpoint)(\/|$|\?)/.test(url);
+}
+
+export function isRateLimited(html) {
+  const lower = html.toLowerCase();
+  return lower.includes('captcha') || lower.includes('unusual activity') || lower.includes('rate limit');
+}
