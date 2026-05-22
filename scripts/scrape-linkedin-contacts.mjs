@@ -196,3 +196,83 @@ async function scrapeAllCompanies(
 
   return { companiesScraped, contactsFound, companiesSkipped, errors };
 }
+
+async function doLogin() {
+  process.stdout.write('Starting GoLogin browser for LinkedIn login…\n');
+  await withBrowser(async (browser) => {
+    const page = await browser.newPage();
+    await page.goto('https://www.linkedin.com/login', {
+      waitUntil: 'domcontentloaded',
+      timeout: 20_000,
+    });
+    process.stdout.write(
+      '\nBrowser open — log in to LinkedIn, then press Enter here to save session and exit.\n'
+    );
+    await new Promise(resolve => {
+      process.stdin.setRawMode(false);
+      process.stdin.resume();
+      process.stdin.once('data', () => {
+        process.stdin.pause();
+        resolve();
+      });
+    });
+    await page.close();
+  });
+  process.stdout.write(
+    'Session saved to GoLogin profile. You can now run the scraper without --login.\n'
+  );
+}
+
+async function main() {
+  const args          = process.argv.slice(2);
+  const dryRun        = args.includes('--dry-run');
+  const loginMode     = args.includes('--login');
+  const limitIdx      = args.indexOf('--limit');
+  const limit         = limitIdx >= 0 ? parseInt(args[limitIdx + 1], 10) : Infinity;
+  const companyIdx    = args.indexOf('--company');
+  const companyFilter = companyIdx >= 0 ? (args[companyIdx + 1] ?? '').toLowerCase() : null;
+
+  if (loginMode) {
+    await doLogin();
+    return;
+  }
+
+  if (dryRun) process.stdout.write('(dry run — no files will be written)\n\n');
+
+  const tracker = loadTracker();
+  let companies = getActiveCompanies(tracker);
+
+  if (companyFilter) {
+    companies = companies.filter(c => c.company.toLowerCase().includes(companyFilter));
+    if (!companies.length) {
+      process.stderr.write(`No active-pipeline company matching "${companyFilter}"\n`);
+      process.exit(1);
+    }
+  }
+
+  if (Number.isFinite(limit)) companies = companies.slice(0, limit);
+
+  process.stdout.write(`Scraping contacts for ${companies.length} companies…\n\n`);
+
+  const result = await scrapeAllCompanies(companies, tracker, { dryRun });
+
+  const date = new Date().toISOString().slice(0, 10);
+  process.stdout.write(`\n${'━'.repeat(45)}\n`);
+  process.stdout.write(`LinkedIn Contact Scrape — ${date}\n`);
+  process.stdout.write(`${'━'.repeat(45)}\n`);
+  process.stdout.write(`Companies scraped:   ${result.companiesScraped}\n`);
+  process.stdout.write(`Companies skipped:   ${result.companiesSkipped} (already at limit)\n`);
+  process.stdout.write(`Contacts found:      ${result.contactsFound}\n`);
+  if (result.errors.length) {
+    process.stdout.write(`\nErrors (${result.errors.length}):\n`);
+    for (const e of result.errors) process.stdout.write(`  ✗ ${e.company}: ${e.error}\n`);
+  }
+  if (dryRun) process.stdout.write('\n(dry run — run without --dry-run to save results)\n');
+}
+
+if (import.meta.url === `file://${process.argv[1]}`) {
+  main().catch(err => {
+    process.stderr.write(`Fatal: ${err.message}\n`);
+    process.exit(1);
+  });
+}
