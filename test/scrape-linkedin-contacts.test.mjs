@@ -105,3 +105,86 @@ describe('contactCountForCompany', () => {
     assert.equal(contactCountForCompany(tracker, 'Bonterra'), 0);
   });
 });
+
+import {
+  parseContactCards,
+  normalizeLinkedInUrl,
+} from '../scripts/scrape-linkedin-contacts.mjs';
+
+const SAMPLE_RESULTS_HTML = `
+<ul>
+  <li class="reusable-search__result-container">
+    <div class="entity-result__item">
+      <div class="entity-result__title-text">
+        <a href="/in/janesmith?miniProfileUrn=abc123">
+          <span aria-hidden="true">Jane Smith</span>
+        </a>
+      </div>
+      <div class="entity-result__primary-subtitle">VP of Customer Success at Acme Corp</div>
+    </div>
+  </li>
+  <li class="reusable-search__result-container">
+    <div class="entity-result__item">
+      <div class="entity-result__title-text">
+        <a href="/in/bobdoe?miniProfileUrn=def456">
+          <span aria-hidden="true">Bob Doe</span>
+        </a>
+      </div>
+      <div class="entity-result__primary-subtitle">Software Engineer at Acme Corp</div>
+    </div>
+  </li>
+  <li class="reusable-search__result-container">
+    <div class="entity-result__item">
+      <div class="entity-result__title-text">
+        <a href="/in/carolwhite?miniProfileUrn=ghi789">
+          <span aria-hidden="true">Carol White</span>
+        </a>
+      </div>
+      <div class="entity-result__primary-subtitle">Director, Customer Success at Acme Corp</div>
+    </div>
+  </li>
+</ul>
+`;
+
+describe('parseContactCards', () => {
+  it('extracts CS leadership contacts and filters out non-CS titles', () => {
+    const contacts = parseContactCards(SAMPLE_RESULTS_HTML);
+    assert.equal(contacts.length, 2);
+    assert.equal(contacts[0].name, 'Jane Smith');
+    assert.equal(contacts[1].name, 'Carol White');
+    assert.ok(!contacts.some(c => c.name === 'Bob Doe'));
+  });
+
+  it('strips "at Company Name" from title', () => {
+    const contacts = parseContactCards(SAMPLE_RESULTS_HTML);
+    assert.equal(contacts[0].title, 'VP of Customer Success');
+    assert.ok(!contacts[0].title.includes(' at '));
+  });
+
+  it('normalizes linkedinUrl without tracking params', () => {
+    const contacts = parseContactCards(SAMPLE_RESULTS_HTML);
+    assert.equal(contacts[0].linkedinUrl, 'https://www.linkedin.com/in/janesmith');
+  });
+
+  it('returns empty array for empty results HTML', () => {
+    assert.deepEqual(parseContactCards('<ul></ul>'), []);
+  });
+});
+
+describe('normalizeLinkedInUrl', () => {
+  it('strips tracking params from a full URL', () => {
+    assert.equal(
+      normalizeLinkedInUrl('https://www.linkedin.com/in/janesmith?miniProfileUrn=abc'),
+      'https://www.linkedin.com/in/janesmith'
+    );
+  });
+  it('converts a relative /in/ path to a full URL', () => {
+    assert.equal(
+      normalizeLinkedInUrl('/in/janesmith?miniProfileUrn=abc'),
+      'https://www.linkedin.com/in/janesmith'
+    );
+  });
+  it('returns empty string for empty input', () => {
+    assert.equal(normalizeLinkedInUrl(''), '');
+  });
+});

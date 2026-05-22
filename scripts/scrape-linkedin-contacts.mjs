@@ -46,3 +46,39 @@ export function contactCountForCompany(tracker, company) {
     .filter(job => (job.company || '').toLowerCase().trim() === key)
     .reduce((sum, job) => sum + (Array.isArray(job.contacts) ? job.contacts.length : 0), 0);
 }
+
+export function normalizeLinkedInUrl(href) {
+  if (!href) return '';
+  const full = href.match(/(https?:\/\/(?:www\.)?linkedin\.com\/in\/[^/?#]+)/);
+  if (full) return full[1];
+  const rel = href.match(/\/in\/([^/?#]+)/);
+  if (rel) return `https://www.linkedin.com/in/${rel[1]}`;
+  return '';
+}
+
+export function parseContactCards(html) {
+  const $ = cheerioLoad(html);
+  const contacts = [];
+
+  $('li.reusable-search__result-container, li[class*="result-container"]').each((_, el) => {
+    try {
+      const $el = $(el);
+
+      const nameEl = $el.find('.entity-result__title-text a span[aria-hidden="true"]').first();
+      const name = nameEl.text().trim();
+      if (!name || name === 'LinkedIn Member') return;
+
+      const rawTitle = $el.find('.entity-result__primary-subtitle').first().text().trim();
+      const title = rawTitle.replace(/\s+at\s+.+$/i, '').trim();
+      if (!matchesContactTitle(title)) return;
+
+      const href = $el.find('.entity-result__title-text a').first().attr('href') || '';
+      const linkedinUrl = normalizeLinkedInUrl(href);
+      if (!linkedinUrl) return;
+
+      contacts.push({ name, title, linkedinUrl });
+    } catch { /* skip malformed card */ }
+  });
+
+  return contacts;
+}
