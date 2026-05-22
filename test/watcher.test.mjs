@@ -13,7 +13,6 @@ describe('watcher targets', () => {
       path.resolve(APP_ROOT, 'config', 'profile.yml'),
       path.resolve(APP_ROOT, 'data', 'gmail-jobs.json'),
       path.resolve(APP_ROOT, 'data', 'scan-history.tsv'),
-      path.resolve(APP_ROOT, 'data', 'ab-analytics.json'),
       path.resolve(APP_ROOT, 'reports', '**', '*.md'),
       path.resolve(APP_ROOT, 'portals.yml'),
     ]) {

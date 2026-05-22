@@ -18,6 +18,10 @@ const APP_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)));
 const PORTALS_PATH = path.resolve(APP_ROOT, 'portals.yml');
 const LM_STUDIO_BASE = 'http://localhost:1234';
 
+function preferClaudeEvaluation() {
+  return (process.env.PREFER_CLAUDE_EVALUATION ?? process.env.PREFER_CLAUDE_SYNTHESIS ?? '1') !== '0';
+}
+
 export function parseCliArgs(argv = process.argv.slice(2)) {
   const valueAfter = (flag) => {
     const idx = argv.indexOf(flag);
@@ -91,13 +95,17 @@ export async function runCli(argv = process.argv.slice(2), { stdout = console.lo
   const tracker = loadTrackerRaw();
   stdout(`Tracker entries:    ${Object.keys(tracker).length}`);
 
-  try {
-    await assertLmStudioAvailable();
-    stdout('LM Studio:          connected\n');
-  } catch {
-    stderr('\nERROR: LM Studio not reachable at http://localhost:1234');
-    stderr('Load a model in LM Studio and ensure the server is running.');
-    return { fatal: true, evaluated: 0, skipped: 0, locFiltered: 0, fetchErrors: 0, scoreErrors: 0 };
+  if (preferClaudeEvaluation()) {
+    stdout(`Scoring engine:     Claude (${process.env.CLAUDE_EVALUATION_MODEL ?? process.env.CLAUDE_SYNTHESIS_MODEL ?? 'claude-sonnet-4-6'})\n`);
+  } else {
+    try {
+      await assertLmStudioAvailable();
+      stdout('LM Studio:          connected\n');
+    } catch {
+      stderr('\nERROR: LM Studio not reachable at http://localhost:1234');
+      stderr('Load a model in LM Studio and ensure the server is running, or set PREFER_CLAUDE_EVALUATION=1.');
+      return { fatal: true, evaluated: 0, skipped: 0, locFiltered: 0, fetchErrors: 0, scoreErrors: 0 };
+    }
   }
 
   let evaluated = 0;

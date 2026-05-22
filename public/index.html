@@ -97,6 +97,7 @@
     .material-symbols-outlined {
       font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
     }
+    :root { --sidebar-width: 16rem; }
     html, body { height: 100%; overflow: hidden; }
     body { font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
     .nav-active {
@@ -110,12 +111,84 @@
     .sort-th { cursor: pointer; user-select: none; }
     .sort-th:hover { background: #f8fafc; }
     .sort-icon { font-size: 14px; vertical-align: middle; margin-left: 2px; }
+    .dashboard-scroll { overflow: auto; }
+    .dashboard-view { min-width: 960px; }
+    .dashboard-table { min-width: 960px; }
+    .app-sidebar {
+      width: var(--sidebar-width);
+      min-width: 12rem;
+      max-width: 24rem;
+      transition: transform 180ms ease, width 120ms ease;
+    }
+    .app-main {
+      margin-left: var(--sidebar-width);
+      transition: margin-left 180ms ease;
+    }
+    .sidebar-resize-handle {
+      position: absolute;
+      top: 0;
+      right: -4px;
+      width: 8px;
+      height: 100%;
+      cursor: col-resize;
+    }
+    .sidebar-resize-handle::after {
+      content: "";
+      position: absolute;
+      top: 50%;
+      left: 3px;
+      width: 2px;
+      height: 44px;
+      border-radius: 999px;
+      background: #cbd5e1;
+      transform: translateY(-50%);
+      opacity: 0;
+      transition: opacity 150ms ease;
+    }
+    .app-sidebar:hover .sidebar-resize-handle::after,
+    body.sidebar-resizing .sidebar-resize-handle::after { opacity: 1; }
+    body.sidebar-collapsed .app-sidebar { transform: translateX(calc(-1 * var(--sidebar-width))); }
+    body.sidebar-collapsed .app-main { margin-left: 0; }
+    body.sidebar-collapsed #sidebar-toggle {
+      left: 12px;
+      border-color: #bfdbfe;
+      background: #eff6ff;
+      color: #004ac6;
+    }
+    #sidebar-toggle {
+      position: fixed;
+      left: calc(var(--sidebar-width) - 18px);
+      top: 18px;
+      z-index: 60;
+      width: 30px;
+      height: 30px;
+      border: 1px solid #cbd5e1;
+      border-radius: 8px;
+      background: #ffffff;
+      color: #475569;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      box-shadow: 0 1px 2px rgba(15, 23, 42, 0.08);
+      transition: left 180ms ease, background 150ms ease, border-color 150ms ease, color 150ms ease;
+    }
+    #sidebar-toggle:hover { border-color: #93c5fd; color: #004ac6; background: #eff6ff; }
+    #sidebar-toggle .material-symbols-outlined { font-size: 18px; }
+    @media (min-width: 768px) {
+      #sidebar-toggle { display: flex; }
+    }
+    @media (max-width: 767px) {
+      .app-main { margin-left: 0; }
+    }
   </style>
 </head>
 <body class="bg-background text-on-background h-screen overflow-hidden">
 
   <!-- ─── Sidebar ─────────────────────────────────────────────────────────── -->
-  <aside class="hidden md:flex flex-col p-4 gap-2 bg-slate-50 h-screen w-64 border-r border-slate-200 fixed left-0 top-0 z-50">
+  <button id="sidebar-toggle" type="button" aria-label="Hide sidebar" aria-expanded="true" title="Hide sidebar">
+    <span class="material-symbols-outlined">left_panel_close</span>
+  </button>
+  <aside id="app-sidebar" class="app-sidebar hidden md:flex flex-col p-4 gap-2 bg-slate-50 h-screen border-r border-slate-200 fixed left-0 top-0 z-50">
     <div class="mb-6 px-2 py-2">
       <div class="flex items-center gap-3">
         <div class="w-9 h-9 bg-primary rounded-lg flex items-center justify-center text-white shrink-0">
@@ -132,6 +205,18 @@
       <button data-view="dashboard"  class="nav-btn nav-active   w-full flex items-center gap-3 px-3 py-2 rounded-lg transition-all text-sm font-medium">
         <span class="material-symbols-outlined text-xl">dashboard</span><span>Dashboard</span>
       </button>
+      <button data-view="jobs" class="nav-btn nav-inactive w-full flex items-center gap-3 px-3 py-2 rounded-lg transition-all text-sm font-medium">
+        <span class="material-symbols-outlined text-xl">work</span><span>Jobs</span>
+      </button>
+      <button data-view="resume" class="nav-btn nav-inactive w-full flex items-center gap-3 px-3 py-2 rounded-lg transition-all text-sm font-medium">
+        <span class="material-symbols-outlined text-xl">description</span><span>Resume</span>
+      </button>
+      <button data-view="outreach" class="nav-btn nav-inactive w-full flex items-center gap-3 px-3 py-2 rounded-lg transition-all text-sm font-medium">
+        <span class="material-symbols-outlined text-xl">outgoing_mail</span><span>Outreach</span>
+      </button>
+      <button data-view="contacts" class="nav-btn nav-inactive w-full flex items-center gap-3 px-3 py-2 rounded-lg transition-all text-sm font-medium">
+        <span class="material-symbols-outlined text-xl">contacts</span><span>Contacts</span>
+      </button>
       <button data-view="gmail-review" class="nav-btn nav-inactive w-full flex items-center gap-3 px-3 py-2 rounded-lg transition-all text-sm font-medium">
         <span class="material-symbols-outlined text-xl">mark_email_unread</span><span>Gmail Review</span>
       </button>
@@ -140,6 +225,12 @@
       </button>
       <button data-view="rejected" class="nav-btn nav-inactive w-full flex items-center gap-3 px-3 py-2 rounded-lg transition-all text-sm font-medium">
         <span class="material-symbols-outlined text-xl">cancel</span><span>Rejected</span>
+      </button>
+      <button data-view="analytics" class="nav-btn nav-inactive w-full flex items-center gap-3 px-3 py-2 rounded-lg transition-all text-sm font-medium">
+        <span class="material-symbols-outlined text-xl">monitoring</span><span>Analytics</span>
+      </button>
+      <button data-view="settings" class="nav-btn nav-inactive w-full flex items-center gap-3 px-3 py-2 rounded-lg transition-all text-sm font-medium">
+        <span class="material-symbols-outlined text-xl">settings</span><span>Settings</span>
       </button>
     </nav>
 
@@ -152,10 +243,11 @@
         </div>
       </div>
     </div>
+    <div id="sidebar-resize-handle" class="sidebar-resize-handle" role="separator" aria-orientation="vertical" aria-label="Resize sidebar"></div>
   </aside>
 
   <!-- ─── Main ────────────────────────────────────────────────────────────── -->
-  <main class="md:ml-64 h-screen overflow-hidden flex flex-col">
+  <main id="app-main" class="app-main h-screen overflow-hidden flex flex-col">
 
     <!-- Top Nav -->
     <header class="flex items-center justify-between h-16 px-6 sticky top-0 bg-white border-b border-slate-200 z-40">
@@ -177,12 +269,12 @@
     </header>
 
     <!-- View Container -->
-    <div class="flex-1 overflow-y-auto p-6 space-y-6">
+    <div class="dashboard-scroll flex-1 p-6 space-y-6">
 
       <!-- ═══════════════════════════════════════════════════════════════════
            DASHBOARD VIEW (combined with Opportunities)
            ═══════════════════════════════════════════════════════════════════ -->
-      <div id="view-dashboard">
+      <div id="view-dashboard" class="dashboard-view">
 
         <!-- Header row -->
         <div class="flex flex-col md:flex-row md:items-end justify-between gap-2 mb-6">
@@ -207,12 +299,6 @@
           </div>
         </div>
 
-        <!-- KPI Cards -->
-        <div class="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6" id="kpi-grid"></div>
-
-        <!-- Workflow command center -->
-        <div id="workflow-summary-grid" class="grid grid-cols-2 lg:grid-cols-6 gap-3 mb-4"></div>
-
         <!-- Pipeline breakdown -->
         <div class="bg-white p-4 rounded-xl border border-slate-200 shadow-sm mb-4">
           <div class="flex items-center justify-between mb-3">
@@ -224,8 +310,11 @@
               <option value="alpha">A–Z</option>
             </select>
           </div>
-          <div id="pipeline-breakdown" class="flex flex-wrap gap-3"></div>
+          <div id="pipeline-breakdown" class="grid grid-cols-7 gap-2"></div>
         </div>
+
+        <!-- Workflow command center -->
+        <div id="workflow-summary-grid" class="grid grid-cols-2 lg:grid-cols-6 gap-3 mb-4"></div>
 
         <!-- Filter bar -->
         <div class="bg-white rounded-xl border border-slate-200 shadow-sm p-4 mb-4 flex flex-wrap gap-3 items-center">
@@ -244,6 +333,19 @@
             class="border border-slate-200 rounded-lg px-3 py-2 text-sm bg-white text-slate-700 outline-none focus:ring-2 focus:ring-blue-600/20">
             <option value="">All Sources</option>
           </select>
+          <select id="opp-posted-filter"
+            class="border border-slate-200 rounded-lg px-3 py-2 text-sm bg-white text-slate-700 outline-none focus:ring-2 focus:ring-blue-600/20">
+            <option value="">All Posted Dates</option>
+            <option value="7">Last 7 days</option>
+            <option value="30">Last 30 days</option>
+            <option value="60">Last 60 days</option>
+            <option value="old">Older than 60 days</option>
+          </select>
+          <button id="bulk-generate-visible-btn"
+            class="hidden flex items-center gap-1.5 border border-blue-200 bg-blue-50 text-blue-700 text-xs font-semibold px-3 py-2 rounded-lg hover:bg-blue-100 transition-colors disabled:opacity-50">
+            <span class="material-symbols-outlined text-base">stack</span>
+            <span id="bulk-generate-visible-label">Generate visible</span>
+          </button>
           <span class="text-xs text-slate-400 ml-auto" id="opp-count-label"></span>
         </div>
 
@@ -283,8 +385,8 @@
         </div>
 
         <!-- Jobs table — full width -->
-        <div class="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
-            <table class="w-full text-sm">
+        <div class="bg-white rounded-xl border border-slate-200 shadow-sm overflow-x-auto">
+            <table class="dashboard-table w-full text-sm">
               <thead>
                 <tr class="border-b border-slate-200 bg-slate-50" id="opp-thead">
                   <th class="sort-th text-left px-4 py-3 text-xs font-bold text-slate-500 uppercase tracking-wide" data-col="company" onclick="setOppSort('company')">
@@ -298,6 +400,9 @@
                   </th>
                   <th class="sort-th text-left px-4 py-3 text-xs font-bold text-slate-500 uppercase tracking-wide hidden lg:table-cell" data-col="location" onclick="setOppSort('location')">
                     Location<span class="sort-icon material-symbols-outlined sort-icon-location">unfold_more</span>
+                  </th>
+                  <th class="sort-th text-left px-4 py-3 text-xs font-bold text-slate-500 uppercase tracking-wide hidden md:table-cell" data-col="date_found" onclick="setOppSort('date_found')">
+                    Posted<span class="sort-icon material-symbols-outlined sort-icon-date_found">unfold_more</span>
                   </th>
                   <th class="sort-th text-left px-4 py-3 text-xs font-bold text-slate-500 uppercase tracking-wide hidden md:table-cell" data-col="date_updated" onclick="setOppSort('date_updated')">
                     Updated<span class="sort-icon material-symbols-outlined sort-icon-date_updated">arrow_downward</span>
@@ -315,9 +420,100 @@
       </div><!-- /view-dashboard -->
 
       <!-- ═══════════════════════════════════════════════════════════════════
+           JOBS WORKSPACE
+           ═══════════════════════════════════════════════════════════════════ -->
+      <div id="view-jobs" class="dashboard-view" hidden>
+        <div class="flex flex-col md:flex-row md:items-center justify-between gap-2 mb-4">
+          <div>
+            <h2 class="text-h1 font-h1 text-on-surface">Jobs</h2>
+            <p class="text-body-md text-slate-500" id="jobs-count-label">Loading jobs…</p>
+          </div>
+        </div>
+        <div id="job-detail-root" class="space-y-4"></div>
+        <div id="jobs-list-root" class="bg-white rounded-xl border border-slate-200 shadow-sm overflow-x-auto"></div>
+      </div><!-- /view-jobs -->
+
+      <!-- ═══════════════════════════════════════════════════════════════════
+           RESUME WORKSPACE
+           ═══════════════════════════════════════════════════════════════════ -->
+      <div id="view-resume" class="dashboard-view" hidden>
+        <div class="flex flex-col md:flex-row md:items-center justify-between gap-2 mb-4">
+          <div>
+            <h2 class="text-h1 font-h1 text-on-surface">Resume Workspace</h2>
+            <p class="text-body-md text-slate-500" id="resume-count-label">Loading resume queue…</p>
+          </div>
+          <select id="resume-filter"
+            class="border border-slate-200 rounded-lg px-3 py-2 text-sm bg-white text-slate-700 outline-none focus:ring-2 focus:ring-blue-600/20">
+            <option value="">All resume work</option>
+            <option value="needs_resume">Needs resume</option>
+            <option value="generated">Generated</option>
+            <option value="running">Running</option>
+            <option value="blocked">Blocked</option>
+            <option value="high_ats">High ATS</option>
+            <option value="low_ats">Low ATS</option>
+          </select>
+        </div>
+        <div class="grid grid-cols-1 xl:grid-cols-[minmax(0,1fr)_320px] gap-4">
+          <div class="space-y-4">
+            <div id="resume-queue-root" class="bg-white rounded-xl border border-slate-200 shadow-sm overflow-x-auto"></div>
+            <div id="resume-versions-root" class="bg-white rounded-xl border border-slate-200 shadow-sm p-4"></div>
+          </div>
+          <div id="resume-quality-root" class="bg-white rounded-xl border border-slate-200 shadow-sm p-4 self-start"></div>
+        </div>
+      </div><!-- /view-resume -->
+
+      <!-- ═══════════════════════════════════════════════════════════════════
+           OUTREACH WORKSPACE
+           ═══════════════════════════════════════════════════════════════════ -->
+      <div id="view-outreach" class="dashboard-view" hidden>
+        <div class="flex flex-col md:flex-row md:items-center justify-between gap-2 mb-4">
+          <div>
+            <h2 class="text-h1 font-h1 text-on-surface">Outreach</h2>
+            <p class="text-body-md text-slate-500" id="outreach-count-label">Loading outreach…</p>
+          </div>
+        </div>
+        <div id="outreach-summary-root" class="grid grid-cols-4 gap-3 mb-4"></div>
+        <div class="grid grid-cols-1 xl:grid-cols-2 gap-4">
+          <div id="outreach-due-root" class="bg-white rounded-xl border border-slate-200 shadow-sm p-4"></div>
+          <div id="outreach-drafts-root" class="bg-white rounded-xl border border-slate-200 shadow-sm p-4"></div>
+          <div id="outreach-sent-root" class="bg-white rounded-xl border border-slate-200 shadow-sm p-4"></div>
+          <div id="outreach-replies-root" class="bg-white rounded-xl border border-slate-200 shadow-sm p-4"></div>
+        </div>
+      </div><!-- /view-outreach -->
+
+      <!-- ═══════════════════════════════════════════════════════════════════
+           CONTACTS WORKSPACE
+           ═══════════════════════════════════════════════════════════════════ -->
+      <div id="view-contacts" class="dashboard-view" hidden>
+        <div class="flex flex-col md:flex-row md:items-center justify-between gap-2 mb-4">
+          <div>
+            <h2 class="text-h1 font-h1 text-on-surface">Contacts</h2>
+            <p class="text-body-md text-slate-500" id="contacts-count-label">Loading contacts…</p>
+          </div>
+        </div>
+        <div class="bg-white rounded-xl border border-slate-200 shadow-sm p-4 mb-4 flex flex-wrap gap-3 items-center">
+          <div class="relative flex-1 min-w-52">
+            <span class="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-lg">search</span>
+            <input id="contacts-search" type="text"
+              class="w-full bg-slate-50 border border-slate-200 rounded-lg pl-10 py-2 text-sm outline-none focus:ring-2 focus:ring-blue-600/20"
+              placeholder="Search contacts, companies, roles…">
+          </div>
+          <select id="contacts-relationship-filter"
+            class="border border-slate-200 rounded-lg px-3 py-2 text-sm bg-white text-slate-700 outline-none focus:ring-2 focus:ring-blue-600/20">
+            <option value="">All relationships</option>
+          </select>
+          <select id="contacts-response-filter"
+            class="border border-slate-200 rounded-lg px-3 py-2 text-sm bg-white text-slate-700 outline-none focus:ring-2 focus:ring-blue-600/20">
+            <option value="">All response states</option>
+          </select>
+        </div>
+        <div id="contacts-root" class="bg-white rounded-xl border border-slate-200 shadow-sm overflow-x-auto"></div>
+      </div><!-- /view-contacts -->
+
+      <!-- ═══════════════════════════════════════════════════════════════════
            GMAIL REVIEW VIEW
            ═══════════════════════════════════════════════════════════════════ -->
-      <div id="view-gmail-review" hidden>
+      <div id="view-gmail-review" class="dashboard-view" hidden>
 
         <div class="flex flex-col md:flex-row md:items-center justify-between gap-2 mb-4">
           <div>
@@ -346,7 +542,7 @@
       <!-- ═══════════════════════════════════════════════════════════════════
            INTERVIEWS VIEW
            ═══════════════════════════════════════════════════════════════════ -->
-      <div id="view-interviews" hidden>
+      <div id="view-interviews" class="dashboard-view" hidden>
 
         <div class="flex flex-col md:flex-row md:items-center justify-between gap-2 mb-4">
           <div>
@@ -378,8 +574,8 @@
           </select>
         </div>
 
-        <div class="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
-          <table class="w-full text-sm">
+        <div class="bg-white rounded-xl border border-slate-200 shadow-sm overflow-x-auto">
+          <table class="dashboard-table w-full text-sm">
             <thead>
               <tr class="border-b border-slate-200 bg-slate-50">
                 <th class="text-left px-4 py-3 text-xs font-bold text-slate-500 uppercase tracking-wide">Company / Role</th>
@@ -404,7 +600,7 @@
       <!-- ═══════════════════════════════════════════════════════════════════
            REJECTED VIEW
            ═══════════════════════════════════════════════════════════════════ -->
-      <div id="view-rejected" hidden>
+      <div id="view-rejected" class="dashboard-view" hidden>
 
         <div class="flex flex-col md:flex-row md:items-center justify-between gap-2 mb-4">
           <div>
@@ -430,8 +626,8 @@
           </select>
         </div>
 
-        <div class="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
-          <table class="w-full text-sm">
+        <div class="bg-white rounded-xl border border-slate-200 shadow-sm overflow-x-auto">
+          <table class="dashboard-table w-full text-sm">
             <thead>
               <tr class="border-b border-slate-200 bg-slate-50">
                 <th class="text-left px-4 py-3 text-xs font-bold text-slate-500 uppercase tracking-wide">Company / Role</th>
@@ -452,6 +648,42 @@
         </div>
 
       </div><!-- /view-rejected -->
+
+      <!-- ═══════════════════════════════════════════════════════════════════
+           ANALYTICS VIEW
+           ═══════════════════════════════════════════════════════════════════ -->
+      <div id="view-analytics" class="dashboard-view" hidden>
+        <div class="flex flex-col md:flex-row md:items-center justify-between gap-2 mb-4">
+          <div>
+            <h2 class="text-h1 font-h1 text-on-surface">Analytics</h2>
+            <p class="text-body-md text-slate-500" id="analytics-count-label">Loading pipeline health…</p>
+          </div>
+        </div>
+        <div id="analytics-summary-root" class="grid grid-cols-4 gap-3 mb-4"></div>
+        <div class="grid grid-cols-1 xl:grid-cols-2 gap-4">
+          <div id="analytics-stage-root" class="bg-white rounded-xl border border-slate-200 shadow-sm p-4"></div>
+          <div id="analytics-resume-root" class="bg-white rounded-xl border border-slate-200 shadow-sm p-4"></div>
+          <div id="analytics-followup-root" class="bg-white rounded-xl border border-slate-200 shadow-sm p-4"></div>
+          <div id="analytics-outreach-root" class="bg-white rounded-xl border border-slate-200 shadow-sm p-4"></div>
+        </div>
+      </div><!-- /view-analytics -->
+
+      <!-- ═══════════════════════════════════════════════════════════════════
+           SETTINGS VIEW
+           ═══════════════════════════════════════════════════════════════════ -->
+      <div id="view-settings" class="dashboard-view" hidden>
+        <div class="flex flex-col md:flex-row md:items-center justify-between gap-2 mb-4">
+          <div>
+            <h2 class="text-h1 font-h1 text-on-surface">Settings</h2>
+            <p class="text-body-md text-slate-500" id="settings-count-label">Loading local health…</p>
+          </div>
+        </div>
+        <div id="settings-paths-root" class="bg-white rounded-xl border border-slate-200 shadow-sm p-4 mb-4"></div>
+        <div class="grid grid-cols-1 xl:grid-cols-2 gap-4">
+          <div id="settings-files-root" class="bg-white rounded-xl border border-slate-200 shadow-sm p-4"></div>
+          <div id="settings-health-root" class="bg-white rounded-xl border border-slate-200 shadow-sm p-4"></div>
+        </div>
+      </div><!-- /view-settings -->
 
     </div><!-- /flex-1 p-6 -->
   </main>

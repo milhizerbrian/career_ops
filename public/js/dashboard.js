@@ -4,12 +4,19 @@ import {
   deleteJobRequest,
   dismissGmailAmbiguity,
   evaluateUrl,
+  fetchAnalyticsSummary,
   fetchAmbiguousGmailJobs,
+  fetchContactsWorkspace,
   fetchDashboard,
+  fetchJobDetail,
+  fetchOutreachWorkspace,
   fetchResumeRuns,
+  fetchResumeWorkspace,
+  fetchSettingsHealth,
   generateContactOutreachDraft,
   patchJob,
   postWorkflowEvent,
+  submitResumeGapAnswers,
   upsertJobContact,
 } from './api.js';
 import { sortJobsBy } from './jobs-table.js';
@@ -30,6 +37,16 @@ let oppSort      = { col: 'date_updated', dir: 'desc' };
 let pipelineSort = 'count'; // 'count' | 'stage' | 'alpha'
 let activeHealthFilter = '';
 const activeResumeJobs = new Set();
+const BULK_RESUME_CONCURRENCY = 3;
+let currentVisibleOpportunityJobs = [];
+let bulkResumeRunning = false;
+let sidebarControlsReady = false;
+let resumeWorkspace = null;
+let outreachWorkspace = null;
+let contactsWorkspace = null;
+let analyticsSummary = null;
+let settingsHealth = null;
+let currentJobDetailId = '';
 
 function isRejectedJob(job) {
   return (job?.status || '').toLowerCase() === 'rejected';
@@ -39,9 +56,94 @@ function visibleDashboardJobs(jobs) {
   return jobs.filter(job => !isRejectedJob(job));
 }
 
+function setupSidebarControls() {
+  if (sidebarControlsReady) return;
+  sidebarControlsReady = true;
+  const root = document.documentElement;
+  const toggle = document.getElementById('sidebar-toggle');
+  const handle = document.getElementById('sidebar-resize-handle');
+  const storedWidthValue = localStorage.getItem('careerOpsSidebarWidth');
+  const storedWidth = storedWidthValue == null ? null : Number(storedWidthValue);
+  const storedCollapsed = localStorage.getItem('careerOpsSidebarCollapsed') === '1';
+  const clamp = value => Math.min(384, Math.max(192, value));
+  const applyWidth = value => {
+    const width = clamp(value);
+    root.style.setProperty('--sidebar-width', `${width}px`);
+    if (toggle && !document.body.classList.contains('sidebar-collapsed')) {
+      toggle.style.left = `${width - 18}px`;
+    }
+    localStorage.setItem('careerOpsSidebarWidth', String(width));
+  };
+  const applyCollapsed = collapsed => {
+    document.body.classList.toggle('sidebar-collapsed', collapsed);
+    if (toggle) {
+      const icon = toggle.querySelector('.material-symbols-outlined');
+      toggle.setAttribute('aria-expanded', String(!collapsed));
+      toggle.setAttribute('aria-label', collapsed ? 'Show sidebar' : 'Hide sidebar');
+      toggle.title = collapsed ? 'Show sidebar' : 'Hide sidebar';
+      if (icon) icon.textContent = collapsed ? 'left_panel_open' : 'left_panel_close';
+      if (collapsed) toggle.style.left = '12px';
+      else {
+        const width = Number(localStorage.getItem('careerOpsSidebarWidth')) || 256;
+        toggle.style.left = `${clamp(width) - 18}px`;
+      }
+    }
+    localStorage.setItem('careerOpsSidebarCollapsed', collapsed ? '1' : '0');
+  };
+
+  if (Number.isFinite(storedWidth)) applyWidth(storedWidth);
+  if (storedCollapsed) applyCollapsed(true);
+
+  toggle?.addEventListener('click', () => {
+    applyCollapsed(!document.body.classList.contains('sidebar-collapsed'));
+  });
+
+  handle?.addEventListener('pointerdown', event => {
+    event.preventDefault();
+    applyCollapsed(false);
+    document.body.classList.add('sidebar-resizing');
+    handle.setPointerCapture(event.pointerId);
+    const onMove = moveEvent => applyWidth(moveEvent.clientX);
+    const onUp = upEvent => {
+      document.body.classList.remove('sidebar-resizing');
+      handle.releasePointerCapture(upEvent.pointerId);
+      window.removeEventListener('pointermove', onMove);
+      window.removeEventListener('pointerup', onUp);
+    };
+    window.addEventListener('pointermove', onMove);
+    window.addEventListener('pointerup', onUp);
+  });
+}
+
+function atsPercent(job) {
+  const atsScore = Number(job?._ats?.score);
+  if (Number.isFinite(atsScore)) return Math.round(atsScore);
+  const fitScore = Number(job?.score);
+  return Number.isFinite(fitScore) ? Math.round(fitScore * 20) : null;
+}
+
+function atsScoreLabel(job) {
+  const pct = atsPercent(job);
+  return pct == null ? '—' : pct + '%';
+}
+
+function atsScoreColor(job) {
+  const pct = atsPercent(job);
+  if (pct == null) return 'text-slate-400';
+  if (pct >= 80) return 'text-emerald-600';
+  if (pct >= 50) return 'text-amber-600';
+  return 'text-rose-600';
+}
+
+function compactNextStep(job) {
+  const next = job?._workflow?.nextBestAction;
+  return next ? nextActionLabel(next) : '';
+}
+
 // ─── Boot ─────────────────────────────────────────────────────────────────────
 async function init() {
   try {
+    setupSidebarControls();
     const [data, gmailJobs] = await Promise.all([
       fetchDashboard(),
       fetchAmbiguousGmailJobs().catch(() => []),
@@ -56,6 +158,8 @@ async function init() {
     setupOpportunities();
     setupInterviews();
     setupRejected();
+    setupOperationalWorkspaces();
+    renderWorkspaceView(viewFromPath());
     restoreResumeRuns();
   } catch (e) {
     document.getElementById('dash-subtitle').textContent = 'Failed to load: ' + e.message;
@@ -63,23 +167,41 @@ async function init() {
 }
 
 // ─── Navigation ───────────────────────────────────────────────────────────────
-const VIEWS = ['dashboard', 'gmail-review', 'interviews', 'rejected'];
+const VIEWS = ['dashboard', 'jobs', 'resume', 'outreach', 'contacts', 'gmail-review', 'interviews', 'rejected', 'analytics', 'settings'];
 const VIEW_PATHS = {
   dashboard: '/',
+  jobs: '/jobs',
+  resume: '/resume',
+  outreach: '/outreach',
+  contacts: '/contacts',
   'gmail-review': '/gmail-review',
   interviews: '/interviews',
   rejected: '/rejected',
+  analytics: '/analytics',
+  settings: '/settings',
 };
 const PATH_VIEWS = {
   '/': 'dashboard',
   '/dashboard': 'dashboard',
+  '/jobs': 'jobs',
+  '/resume': 'resume',
+  '/outreach': 'outreach',
+  '/contacts': 'contacts',
   '/gmail-review': 'gmail-review',
   '/gmail-revoew': 'gmail-review',
   '/interviews': 'interviews',
   '/rejected': 'rejected',
+  '/analytics': 'analytics',
+  '/settings': 'settings',
 };
 
 function viewFromPath(pathname = window.location.pathname) {
+  const jobMatch = pathname.match(/^\/jobs\/([^/]+)$/);
+  if (jobMatch) {
+    currentJobDetailId = decodeURIComponent(jobMatch[1]);
+    return 'jobs';
+  }
+  currentJobDetailId = '';
   return PATH_VIEWS[pathname] || 'dashboard';
 }
 
@@ -93,10 +215,12 @@ function showView(name, { push = true } = {}) {
     btn.className = 'nav-btn w-full flex items-center gap-3 px-3 py-2 rounded-lg transition-all text-sm font-medium '
       + (active ? 'nav-active' : 'nav-inactive');
   });
+  if (viewName !== 'jobs' || push) currentJobDetailId = '';
   const nextPath = VIEW_PATHS[viewName] || '/';
   if (push && window.location.pathname !== nextPath) {
     history.pushState({ view: viewName }, '', nextPath);
   }
+  renderWorkspaceView(viewName);
 }
 
 document.querySelectorAll('.nav-btn').forEach(btn => {
@@ -145,9 +269,9 @@ function computeKPIs(jobs) {
   const activeJobs   = visibleDashboardJobs(jobs);
   const total        = activeJobs.length;
   const interviews   = activeJobs.filter(j => INTERVIEW_STATUSES.has(j.status || '')).length;
-  const scored       = activeJobs.filter(j => j.score != null);
+  const scored       = activeJobs.map(atsPercent).filter(pct => pct != null);
   const avgAts       = scored.length
-    ? Math.round(scored.reduce((s,j) => s + j.score, 0) / scored.length * 20) : 0;
+    ? Math.round(scored.reduce((sum, pct) => sum + pct, 0) / scored.length) : 0;
   const nonLead      = activeJobs.filter(j => (j.status || '') !== 'lead').length;
   const responseRate = total ? Math.round(nonLead / total * 100) : 0;
   return { total, interviews, avgAts, responseRate };
@@ -169,7 +293,6 @@ function kpiCard(icon, iconBg, iconColor, label, value) {
 
 // ─── Dashboard ────────────────────────────────────────────────────────────────
 function renderDashboard(builtAt = dashboardMeta.builtAt, lastScanAt = dashboardMeta.lastScanAt) {
-  const kpis = computeKPIs(allJobs);
   const visibleJobs = visibleDashboardJobs(allJobs);
 
   document.getElementById('dash-subtitle').textContent =
@@ -183,13 +306,6 @@ function renderDashboard(builtAt = dashboardMeta.builtAt, lastScanAt = dashboard
       : '';
   }
 
-  document.getElementById('kpi-grid').innerHTML = [
-    kpiCard('rocket_launch', 'bg-blue-50',   'text-blue-600',   'TOTAL LEADS',   kpis.total),
-    kpiCard('forum',         'bg-purple-50', 'text-purple-600', 'INTERVIEWS',     kpis.interviews),
-    kpiCard('analytics',     'bg-amber-50',  'text-amber-600',  'AVG ATS SCORE',  kpis.avgAts + '%'),
-    kpiCard('show_chart',    'bg-rose-50',   'text-rose-600',   'RESPONSE RATE',  kpis.responseRate + '%'),
-  ].join('');
-
   renderWorkflowSummary();
   renderPipelineBreakdown();
   renderGmailAmbiguities();
@@ -200,17 +316,17 @@ function renderWorkflowSummary() {
   if (!grid) return;
   const counts = buildHealthSummaryCounts();
   const items = [
-    ['urgent_followups', 'priority_high', 'bg-rose-50', 'text-rose-600', 'URGENT FOLLOW-UPS', counts.urgentFollowUps],
-    ['stale_leads', 'schedule', 'bg-amber-50', 'text-amber-600', 'STALE LEADS', counts.staleLeads],
-    ['gmail_ambiguity', 'mark_email_unread', 'bg-amber-50', 'text-amber-700', 'GMAIL REVIEW', counts.ambiguousGmailMatches],
-    ['needs_resume', 'description', 'bg-blue-50', 'text-blue-600', 'NEEDS RESUME', counts.jobsNeedingResume],
-    ['ready_apply', 'send', 'bg-emerald-50', 'text-emerald-600', 'READY TO APPLY', counts.jobsReadyToApply],
-    ['prep_interview', 'event_available', 'bg-purple-50', 'text-purple-600', 'INTERVIEW PREP', counts.interviewsPrepNeeded],
+    ['urgent_followups', 'priority_high', 'bg-rose-50', 'text-rose-600', 'URGENT FOLLOW-UPS', counts.urgentFollowUps, 'Applied jobs or contacts with follow-up due now. Click to show only roles needing a prompt next touch.'],
+    ['stale_leads', 'schedule', 'bg-amber-50', 'text-amber-600', 'STALE LEADS', counts.staleLeads, 'Lead-stage roles that have gone quiet long enough to need a decision, outreach, or archive pass.'],
+    ['gmail_ambiguity', 'mark_email_unread', 'bg-amber-50', 'text-amber-700', 'GMAIL REVIEW', counts.ambiguousGmailMatches, 'Emails that matched more than one job. Click to attach each thread to the right opportunity.'],
+    ['needs_resume', 'description', 'bg-blue-50', 'text-blue-600', 'NEEDS RESUME', counts.jobsNeedingResume, 'Active leads without a generated resume, or roles whose workflow says resume generation is the next move.'],
+    ['ready_apply', 'send', 'bg-emerald-50', 'text-emerald-600', 'READY TO APPLY', counts.jobsReadyToApply, 'Roles where the next best action is submitting the application. Click to focus the table.'],
+    ['prep_interview', 'event_available', 'bg-purple-50', 'text-purple-600', 'INTERVIEW PREP', counts.interviewsPrepNeeded, 'Interview-stage roles or opportunities where prep is the next best action.'],
   ];
-  grid.innerHTML = items.map(([filter, icon, bg, color, label, value]) => {
+  grid.innerHTML = items.map(([filter, icon, bg, color, label, value, detail]) => {
     const active = activeHealthFilter === filter;
-    return `<button class="health-summary-card text-left bg-white border ${active ? 'border-blue-300 ring-2 ring-blue-600/10' : 'border-slate-200'} rounded-xl shadow-sm p-3 flex items-center gap-3 hover:bg-slate-50 transition-colors"
-      data-filter="${filter}" type="button">
+    return `<button class="health-summary-card group relative text-left bg-white border ${active ? 'border-blue-300 ring-2 ring-blue-600/10' : 'border-slate-200'} rounded-xl shadow-sm p-3 flex items-center gap-3 hover:bg-slate-50 transition-colors"
+      data-filter="${filter}" type="button" aria-describedby="health-detail-${filter}">
       <span class="w-9 h-9 rounded-lg ${bg} ${color} flex items-center justify-center shrink-0">
         <span class="material-symbols-outlined text-xl">${icon}</span>
       </span>
@@ -218,6 +334,10 @@ function renderWorkflowSummary() {
         <p class="text-[10px] font-bold uppercase tracking-wide text-slate-400">${label}</p>
         <p class="text-lg font-bold text-slate-800">${value}</p>
       </div>
+      <span id="health-detail-${filter}" role="tooltip"
+        class="pointer-events-none absolute left-0 top-[calc(100%+8px)] z-30 hidden w-64 rounded-lg border border-slate-200 bg-white p-3 text-xs font-medium leading-relaxed text-slate-600 shadow-lg group-hover:block group-focus-visible:block">
+        ${esc(detail)}
+      </span>
     </button>`;
   }).join('');
   grid.querySelectorAll('.health-summary-card').forEach(btn => {
@@ -528,13 +648,19 @@ function renderPipelineBreakdown() {
   document.getElementById('pipeline-breakdown').innerHTML = entries.map(([status, count]) => {
     const total = visibleDashboardJobs(allJobs).length || 1;
     const pct = Math.round(count / total * 100);
-    const { barColor } = statusStyle(status);
-    return `<div class="flex-1 min-w-[90px] max-w-[160px]">
-      <div class="flex justify-between text-xs mb-1">
-        <span class="text-slate-600 font-medium truncate">${esc(statusDisplayLabel(status))}</span>
-        <span class="text-slate-400 ml-1 shrink-0">${count}</span>
+    const { icon, iconBg, iconColor, barColor } = statusStyle(status);
+    return `<div class="bg-slate-50 border border-slate-200 rounded-lg p-2 min-h-[82px] flex flex-col justify-between overflow-hidden">
+      <div class="flex items-start justify-between gap-1">
+        <span class="w-7 h-7 rounded-lg ${iconBg} ${iconColor} flex items-center justify-center shrink-0">
+          <span class="material-symbols-outlined text-base">${icon}</span>
+        </span>
+        <span class="text-[10px] font-semibold text-slate-400">${pct}%</span>
       </div>
-      <div class="h-1.5 bg-slate-100 rounded-full overflow-hidden">
+      <div>
+        <p class="text-[9px] font-bold uppercase tracking-wide text-slate-400 truncate">${esc(statusDisplayLabel(status))}</p>
+        <p class="text-lg font-bold text-slate-800 leading-tight">${count}</p>
+      </div>
+      <div class="h-1.5 bg-white rounded-full overflow-hidden">
         <div class="${barColor} h-full rounded-full" style="width:${pct}%"></div>
       </div>
     </div>`;
@@ -569,7 +695,9 @@ function setupOpportunities() {
   document.getElementById('opp-status-filter').addEventListener('change',  applyOppFilters);
   document.getElementById('opp-score-filter').addEventListener('change',   applyOppFilters);
   document.getElementById('opp-source-filter').addEventListener('change',  applyOppFilters);
+  document.getElementById('opp-posted-filter').addEventListener('change',  applyOppFilters);
   document.getElementById('opp-clear-btn').addEventListener('click',       clearOppFilters);
+  document.getElementById('bulk-generate-visible-btn').addEventListener('click', triggerBulkGenerateVisible);
 
   // Add Job panel
   document.getElementById('add-job-btn').addEventListener('click', () => {
@@ -685,6 +813,7 @@ socket.on('eval-complete', async ({ url, alreadyExists, company, title: role, sc
   const data = await fetchDashboard();
   allJobs    = data.jobs || [];
   dashboardMeta = createDashboardMeta(data);
+  invalidateWorkspaceCaches();
   applyOppFilters();
   renderInterviews();
   renderRejected();
@@ -700,9 +829,10 @@ socket.on('eval-error', ({ url, message }) => {
 
 function clearOppFilters() {
   document.getElementById('global-search').value = '';
-  document.getElementById('opp-status-filter').value = '';
-  document.getElementById('opp-score-filter').value  = '';
-  document.getElementById('opp-source-filter').value = '';
+  document.getElementById('opp-status-filter').value  = '';
+  document.getElementById('opp-score-filter').value   = '';
+  document.getElementById('opp-source-filter').value  = '';
+  document.getElementById('opp-posted-filter').value  = '';
   activeHealthFilter = '';
   oppSort = { col: 'date_updated', dir: 'desc' };
   updateSortHeaders();
@@ -725,7 +855,7 @@ function setOppSort(col) {
 window.setOppSort = setOppSort;
 
 function updateSortHeaders() {
-  const COLS = ['company','score','status','location','date_updated'];
+  const COLS = ['company','score','status','location','date_found','date_updated'];
   COLS.forEach(col => {
     const icon = document.querySelector('.sort-icon-' + col);
     if (!icon) return;
@@ -746,8 +876,9 @@ function applyOppFilters() {
   const statusF = document.getElementById('opp-status-filter').value;
   const scoreF  = document.getElementById('opp-score-filter').value;
   const sourceF = document.getElementById('opp-source-filter').value;
+  const postedF = document.getElementById('opp-posted-filter').value;
 
-  const hasFilter = q || statusF || scoreF || sourceF || activeHealthFilter || oppSort.col !== 'date_updated';
+  const hasFilter = q || statusF || scoreF || sourceF || postedF || activeHealthFilter || oppSort.col !== 'date_updated';
   document.getElementById('opp-clear-btn').classList.toggle('hidden', !hasFilter);
 
   const dashboardJobs = visibleDashboardJobs(allJobs);
@@ -758,10 +889,15 @@ function applyOppFilters() {
     if (sourceF && normalizeSource(j.source) !== sourceF) return false;
     if (!matchesHealthFilter(j)) return false;
     if (scoreF) {
-      const pct = j.score != null ? j.score * 20 : null;
+      const pct = atsPercent(j);
       if (scoreF === 'high' && (pct == null || pct < 80))              return false;
       if (scoreF === 'mid'  && (pct == null || pct < 50 || pct >= 80)) return false;
       if (scoreF === 'low'  && (pct == null || pct >= 50))             return false;
+    }
+    if (postedF && j.date_found) {
+      const daysAgo = Math.floor((Date.now() - new Date(j.date_found).getTime()) / (24 * 60 * 60 * 1000));
+      if (postedF === 'old' && daysAgo <= 60)  return false;
+      if (postedF !== 'old' && daysAgo > Number(postedF)) return false;
     }
     return true;
   });
@@ -769,18 +905,25 @@ function applyOppFilters() {
   filtered = sortJobsBy(filtered, oppSort.col, oppSort.dir, STATUS_ORDER);
 
   document.getElementById('opp-count-label').textContent = `${filtered.length} of ${dashboardJobs.length} active jobs`;
+  currentVisibleOpportunityJobs = filtered;
+  updateBulkGenerateButton();
   document.getElementById('opp-empty').classList.toggle('hidden', filtered.length > 0);
 
   const tbody = document.getElementById('opp-tbody');
   tbody.innerHTML = '';
 
-  filtered.forEach(job => {
-    const pct    = job.score != null ? Math.round(job.score * 20) : null;
-    const atsStr = pct != null ? pct + '%' : '—';
-    const atsColor = pct == null ? 'text-slate-400'
-                   : pct >= 80  ? 'text-emerald-600'
-                   : pct >= 50  ? 'text-amber-600'
-                   : 'text-rose-600';
+  const OLDER_STATUSES = new Set(['applied', 'lead']);
+  const MS_PER_DAY = 24 * 60 * 60 * 1000;
+  const isOlder = j => OLDER_STATUSES.has(j.status) && j.date_updated &&
+    Math.floor((Date.now() - new Date(j.date_updated).getTime()) / MS_PER_DAY) > 10;
+
+  const recent = filtered.filter(j => !isOlder(j));
+  const older  = filtered.filter(isOlder);
+
+  const appendJobRow = job => {
+    const atsStr = atsScoreLabel(job);
+    const atsColor = atsScoreColor(job);
+    const nextStep = compactNextStep(job);
     const detailId = 'detail-' + job.id;
 
     const tr = document.createElement('tr');
@@ -788,7 +931,11 @@ function applyOppFilters() {
     tr.dataset.detailId = detailId;
     tr.innerHTML = `
       <td class="px-4 py-3">
-        <div class="flex items-center gap-3">
+        <div class="flex items-center gap-2">
+          <button class="flag-btn shrink-0 p-0.5 rounded transition-colors ${job.flagged ? 'text-amber-400 hover:text-amber-500' : 'text-slate-200 hover:text-amber-300'}"
+            data-id="${esc(job.id)}" title="${job.flagged ? 'Unflag job' : 'Flag job'}">
+            <span class="material-symbols-outlined text-xl leading-none" style="${job.flagged ? 'font-variation-settings:\'FILL\' 1' : ''}">flag</span>
+          </button>
           <div class="w-8 h-8 rounded-lg bg-surface-container-high flex items-center justify-center text-xs font-bold text-slate-600 shrink-0">
             ${esc((job.company||'?').slice(0,2).toUpperCase())}
           </div>
@@ -796,19 +943,25 @@ function applyOppFilters() {
             <p class="font-semibold text-on-surface truncate max-w-xs">${esc(job.company)}</p>
             <p class="text-xs text-slate-500 truncate max-w-xs">${esc(job.title)}</p>
             <span class="inline-block mt-0.5 px-1.5 py-px rounded text-[10px] font-semibold uppercase tracking-wide ${sourceBadgeCls(job.source)}">${esc(sourceDisplayLabel(job.source))}</span>
+            ${nextStep ? `<p class="text-[11px] text-slate-400 truncate max-w-xs mt-0.5">Next: ${esc(nextStep)}</p>` : ''}
           </div>
         </div>
       </td>
-      <td class="px-4 py-3 hidden md:table-cell">
+      <td class="px-4 py-3 hidden md:table-cell text-left">
         <span class="font-bold ${atsColor}">${atsStr}</span>
       </td>
       <td class="px-4 py-3">${statusBadge(job.status)}</td>
       <td class="px-4 py-3 text-xs text-slate-500 hidden lg:table-cell">${esc(job.location||'—')}</td>
+      <td class="px-4 py-3 text-xs text-slate-400 hidden md:table-cell">${fmtDate(job.date_found)}</td>
       <td class="px-4 py-3 text-xs text-slate-400 hidden md:table-cell">${fmtDate(job.date_updated)}</td>
       <td class="px-4 py-3">
         <div class="flex items-center gap-2">
           <button class="gen-btn px-3 py-1.5 bg-primary text-white text-xs font-bold rounded-lg hover:opacity-90 transition-opacity"
             data-id="${esc(job.id)}">Generate</button>
+          <button class="open-job-btn p-1.5 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
+            data-id="${esc(job.id)}" title="Open job workspace">
+            <span class="material-symbols-outlined text-base leading-none">open_in_new</span>
+          </button>
           <button class="edit-btn p-1.5 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
             data-id="${esc(job.id)}" title="Edit job">
             <span class="material-symbols-outlined text-base leading-none">edit</span>
@@ -824,12 +977,12 @@ function applyOppFilters() {
     const dRow = document.createElement('tr');
     dRow.id = detailId;
     dRow.className = 'hidden bg-slate-50/60';
-    dRow.innerHTML = `<td colspan="6" class="px-6 py-4 border-b border-slate-100">${buildDetailPanel(job)}</td>`;
+    dRow.innerHTML = `<td colspan="7" class="px-6 py-4 border-b border-slate-100">${buildDetailPanel(job)}</td>`;
 
     const pRow = document.createElement('tr');
     pRow.id = 'opp-prog-' + job.id;
     pRow.className = 'hidden';
-    pRow.innerHTML = `<td colspan="6" class="px-6 pb-4 bg-slate-50/50">
+    pRow.innerHTML = `<td colspan="7" class="px-6 pb-4 bg-slate-50/50">
       <div class="stage-log text-xs space-y-0.5 font-mono mt-1"></div>
       <div class="downloads mt-2 flex gap-4 text-xs"></div>
     </td>`;
@@ -837,19 +990,36 @@ function applyOppFilters() {
     tbody.appendChild(tr);
     tbody.appendChild(dRow);
     tbody.appendChild(pRow);
-  });
+  };
+
+  recent.forEach(appendJobRow);
+
+  if (older.length > 0) {
+    const sep = document.createElement('tr');
+    sep.innerHTML = `<td colspan="7" class="px-4 py-1.5 text-[11px] font-semibold uppercase tracking-widest text-slate-400 bg-slate-50 border-y border-slate-100">Older</td>`;
+    tbody.appendChild(sep);
+    older.forEach(appendJobRow);
+  }
 
   // Row click → toggle detail; ignore clicks on action buttons
   tbody.querySelectorAll('tr[data-detail-id]').forEach(tr => {
     tr.addEventListener('click', e => {
-      if (e.target.closest('.gen-btn') || e.target.closest('.edit-btn') || e.target.closest('.del-btn')) return;
+      if (e.target.closest('.gen-btn') || e.target.closest('.open-job-btn') || e.target.closest('.edit-btn') || e.target.closest('.del-btn')) return;
       const dRow = document.getElementById(tr.dataset.detailId);
       if (dRow) dRow.classList.toggle('hidden');
     });
   });
 
+  tbody.querySelectorAll('.flag-btn').forEach(btn => {
+    btn.addEventListener('click', e => { e.stopPropagation(); toggleJobFlag(btn.dataset.id, btn); });
+  });
+
   tbody.querySelectorAll('.gen-btn').forEach(btn => {
     btn.addEventListener('click', () => triggerGenerate(btn.dataset.id, btn));
+  });
+
+  tbody.querySelectorAll('.open-job-btn').forEach(btn => {
+    btn.addEventListener('click', () => showJobDetail(btn.dataset.id));
   });
 
   tbody.querySelectorAll('.edit-btn').forEach(btn => {
@@ -1233,7 +1403,7 @@ function renderInterviews() {
       case 'company_asc':  return (a.company||'').toLowerCase().localeCompare((b.company||'').toLowerCase());
       case 'company_desc': return (b.company||'').toLowerCase().localeCompare((a.company||'').toLowerCase());
       case 'score_desc': {
-        const as = a.score ?? -1, bs = b.score ?? -1;
+        const as = atsPercent(a) ?? -1, bs = atsPercent(b) ?? -1;
         return bs - as;
       }
       case 'stage_desc': {
@@ -1256,9 +1426,9 @@ function renderInterviews() {
   tbody.innerHTML = '';
 
   list.forEach(job => {
-    const pct      = job.score != null ? Math.round(job.score * 20) : null;
-    const atsColor = pct == null ? 'text-slate-400' : pct >= 80 ? 'text-emerald-600' : pct >= 50 ? 'text-amber-600' : 'text-rose-600';
-    const atsStr   = pct != null ? pct + '%' : '—';
+    const atsColor = atsScoreColor(job);
+    const atsStr   = atsScoreLabel(job);
+    const nextStep = compactNextStep(job);
     const detailId = 'int-detail-' + job.id;
 
     const tr = document.createElement('tr');
@@ -1273,20 +1443,21 @@ function renderInterviews() {
           <div class="min-w-0">
             <p class="font-semibold text-on-surface truncate max-w-xs">${esc(job.company)}</p>
             <p class="text-xs text-slate-500 truncate max-w-xs">${esc(job.title)}</p>
+            ${nextStep ? `<p class="text-[11px] text-slate-400 truncate max-w-xs mt-0.5">Next: ${esc(nextStep)}</p>` : ''}
           </div>
         </div>
       </td>
       <td class="px-4 py-3">
         ${statusBadge(job.status)}
-        ${latestNoteText(job.notes) ? `<p class="text-xs text-slate-400 truncate max-w-[220px] mt-1">${esc(latestNoteText(job.notes))}</p>` : ''}
+        ${latestNoteText(job.notes) ? `<p class="text-xs text-slate-500 whitespace-pre-wrap break-words max-w-sm mt-1 leading-snug">${esc(latestNoteText(job.notes))}</p>` : ''}
       </td>
       <td class="px-4 py-3 hidden md:table-cell"><span class="font-bold ${atsColor}">${atsStr}</span></td>
       <td class="px-4 py-3 text-xs text-slate-500 hidden lg:table-cell">${esc(job.location||'—')}</td>
       <td class="px-4 py-3 text-xs text-slate-400 hidden md:table-cell">${fmtDate(job.date_updated)}</td>
       <td class="px-4 py-3">
         <div class="flex items-center gap-2">
-          <button class="int-gen-btn px-3 py-1.5 bg-primary text-white text-xs font-bold rounded-lg hover:opacity-90 transition-opacity"
-            data-id="${esc(job.id)}">Generate</button>
+          <button class="int-add-note-btn px-3 py-1.5 bg-primary text-white text-xs font-bold rounded-lg hover:opacity-90 transition-opacity"
+            data-id="${esc(job.id)}">Add note</button>
           <button class="int-edit-btn p-1.5 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
             data-id="${esc(job.id)}" title="Edit job">
             <span class="material-symbols-outlined text-base leading-none">edit</span>
@@ -1317,13 +1488,13 @@ function renderInterviews() {
   // Row click → toggle detail; ignore button clicks
   tbody.querySelectorAll('tr[data-detail-id]').forEach(tr => {
     tr.addEventListener('click', e => {
-      if (e.target.closest('.int-gen-btn') || e.target.closest('.int-edit-btn')) return;
+      if (e.target.closest('.int-add-note-btn') || e.target.closest('.int-edit-btn')) return;
       document.getElementById(tr.dataset.detailId)?.classList.toggle('hidden');
     });
   });
 
-  tbody.querySelectorAll('.int-gen-btn').forEach(btn => {
-    btn.addEventListener('click', () => triggerGenerate(btn.dataset.id, btn));
+  tbody.querySelectorAll('.int-add-note-btn').forEach(btn => {
+    btn.addEventListener('click', () => openInterviewNote(btn.dataset.id));
   });
 
   tbody.querySelectorAll('.int-edit-btn').forEach(btn => {
@@ -1556,6 +1727,7 @@ async function refreshDashboardState() {
   allJobs = data.jobs || [];
   workflowSummary = data.workflowSummary || workflowSummary;
   dashboardMeta = createDashboardMeta(data);
+  invalidateWorkspaceCaches();
 }
 
 function renderAllViews() {
@@ -1564,6 +1736,492 @@ function renderAllViews() {
   renderGmailAmbiguities();
   renderInterviews();
   renderRejected();
+  if (currentJobDetailId) renderJobsWorkspace();
+  if (resumeWorkspace) renderResumeWorkspace();
+  if (outreachWorkspace) renderOutreachWorkspace();
+  if (contactsWorkspace) renderContactsWorkspace();
+  if (analyticsSummary) renderAnalyticsWorkspace();
+  if (settingsHealth) renderSettingsWorkspace();
+}
+
+function invalidateWorkspaceCaches() {
+  resumeWorkspace = null;
+  outreachWorkspace = null;
+  contactsWorkspace = null;
+  analyticsSummary = null;
+  settingsHealth = null;
+}
+
+function setupOperationalWorkspaces() {
+  document.getElementById('resume-filter')?.addEventListener('change', renderResumeWorkspace);
+  document.getElementById('contacts-search')?.addEventListener('input', renderContactsWorkspace);
+  document.getElementById('contacts-relationship-filter')?.addEventListener('change', renderContactsWorkspace);
+  document.getElementById('contacts-response-filter')?.addEventListener('change', renderContactsWorkspace);
+}
+
+function renderWorkspaceView(viewName) {
+  if (viewName === 'jobs') renderJobsWorkspace();
+  if (viewName === 'resume') renderResumeWorkspace();
+  if (viewName === 'outreach') renderOutreachWorkspace();
+  if (viewName === 'contacts') renderContactsWorkspace();
+  if (viewName === 'analytics') renderAnalyticsWorkspace();
+  if (viewName === 'settings') renderSettingsWorkspace();
+}
+
+function showJobDetail(jobId, { push = true } = {}) {
+  currentJobDetailId = jobId;
+  showView('jobs', { push: false });
+  if (push) history.pushState({ view: 'jobs', jobId }, '', `/jobs/${encodeURIComponent(jobId)}`);
+  renderJobsWorkspace();
+}
+
+async function renderJobsWorkspace() {
+  const detailRoot = document.getElementById('job-detail-root');
+  const listRoot = document.getElementById('jobs-list-root');
+  const countEl = document.getElementById('jobs-count-label');
+  if (!detailRoot || !listRoot || !countEl) return;
+
+  if (currentJobDetailId) {
+    detailRoot.innerHTML = `<div class="bg-white rounded-xl border border-slate-200 shadow-sm p-4 text-sm text-slate-500">Loading job detail…</div>`;
+    listRoot.innerHTML = '';
+    try {
+      const job = await fetchJobDetail(currentJobDetailId);
+      countEl.textContent = `${job.company || 'Unknown company'} · ${job.title || 'Unknown role'}`;
+      detailRoot.innerHTML = renderJobDetailWorkspace(job);
+      bindWorkflowActions(detailRoot);
+      bindContactWorkspace(detailRoot);
+      bindJobDetailActions(detailRoot, job);
+    } catch (e) {
+      countEl.textContent = 'Job detail unavailable';
+      detailRoot.innerHTML = `<div class="bg-white rounded-xl border border-rose-200 shadow-sm p-4 text-sm text-rose-600">${esc(e.message)}</div>`;
+    }
+    return;
+  }
+
+  detailRoot.innerHTML = '';
+  const jobs = [...allJobs].sort((a, b) => String(b.date_updated || '').localeCompare(String(a.date_updated || '')));
+  countEl.textContent = `${jobs.length} tracked job${jobs.length === 1 ? '' : 's'}`;
+  listRoot.innerHTML = `<table class="dashboard-table w-full text-sm">
+    <thead>
+      <tr class="border-b border-slate-200 bg-slate-50">
+        <th class="text-left px-4 py-3 text-xs font-bold text-slate-500 uppercase tracking-wide">Company / Role</th>
+        <th class="text-left px-4 py-3 text-xs font-bold text-slate-500 uppercase tracking-wide">Status</th>
+        <th class="text-left px-4 py-3 text-xs font-bold text-slate-500 uppercase tracking-wide hidden md:table-cell">ATS</th>
+        <th class="text-left px-4 py-3 text-xs font-bold text-slate-500 uppercase tracking-wide hidden lg:table-cell">Next</th>
+        <th class="text-left px-4 py-3 text-xs font-bold text-slate-500 uppercase tracking-wide">Action</th>
+      </tr>
+    </thead>
+    <tbody>
+      ${jobs.map(job => `<tr class="border-b border-slate-100 hover:bg-slate-50">
+        <td class="px-4 py-3">
+          <p class="font-semibold text-slate-800">${esc(job.company || 'Unknown')}</p>
+          <p class="text-xs text-slate-500">${esc(job.title || '')}</p>
+        </td>
+        <td class="px-4 py-3">${statusBadge(job.status)}</td>
+        <td class="px-4 py-3 hidden md:table-cell"><span class="font-bold ${atsScoreColor(job)}">${atsScoreLabel(job)}</span></td>
+        <td class="px-4 py-3 hidden lg:table-cell text-xs text-slate-500">${esc(compactNextStep(job) || 'Review')}</td>
+        <td class="px-4 py-3">
+          <button class="job-open-btn text-xs font-semibold text-blue-600 border border-blue-100 rounded-lg px-3 py-1.5 hover:bg-blue-50" data-id="${esc(job.id)}">Open</button>
+        </td>
+      </tr>`).join('')}
+    </tbody>
+  </table>`;
+  listRoot.querySelectorAll('.job-open-btn').forEach(btn => {
+    btn.addEventListener('click', () => showJobDetail(btn.dataset.id));
+  });
+}
+
+function renderJobDetailWorkspace(job) {
+  const versions = Array.isArray(job.resumeVersions) ? job.resumeVersions : generatedResumeVersions(job);
+  const gmail = job.gmail || {};
+  return `<div class="space-y-4">
+    <div class="flex items-center justify-between gap-3">
+      <button id="job-detail-back" class="text-xs font-semibold text-slate-500 border border-slate-200 rounded-lg px-3 py-1.5 hover:bg-slate-50">Back to jobs</button>
+      <div class="flex items-center gap-2">
+        ${job.url ? `<a href="${esc(job.url)}" target="_blank" rel="noopener" class="text-xs font-semibold text-blue-600 border border-blue-100 rounded-lg px-3 py-1.5 hover:bg-blue-50">Posting</a>` : ''}
+        <button class="gen-btn bg-primary text-white text-xs font-semibold rounded-lg px-3 py-1.5 hover:opacity-90" data-id="${esc(job.id)}">Generate resume</button>
+        <button class="job-detail-edit text-xs font-semibold text-slate-600 border border-slate-200 rounded-lg px-3 py-1.5 hover:bg-slate-50" data-id="${esc(job.id)}">Edit</button>
+      </div>
+    </div>
+    <div class="grid grid-cols-1 xl:grid-cols-[minmax(0,1fr)_320px] gap-4">
+      <div class="space-y-4">
+        <div class="bg-white rounded-xl border border-slate-200 shadow-sm p-4">
+          <div class="flex items-start justify-between gap-3 mb-3">
+            <div>
+              <p class="text-[10px] font-bold uppercase tracking-wide text-slate-400">Opportunity</p>
+              <h3 class="text-xl font-bold text-slate-900">${esc(job.company || 'Unknown company')}</h3>
+              <p class="text-sm text-slate-500">${esc(job.title || 'Unknown role')}</p>
+            </div>
+            ${statusBadge(job.status)}
+          </div>
+          <div class="grid grid-cols-4 gap-2 mb-4">
+            ${workspaceMetricCard('ATS', atsScoreLabel(job), atsScoreColor(job))}
+            ${workspaceMetricCard('OI', job._oi?.score ?? '—', 'text-slate-800')}
+            ${workspaceMetricCard('Resumes', versions.length, 'text-slate-800')}
+            ${workspaceMetricCard('Contacts', (job.contacts || []).length, 'text-slate-800')}
+          </div>
+          ${buildDetailPanel(job)}
+        </div>
+        <div class="bg-white rounded-xl border border-slate-200 shadow-sm p-4">
+          <p class="text-label-caps font-label-caps text-slate-500 mb-3">GMAIL SIGNALS</p>
+          ${gmail.lastEmailDate ? `<div class="text-sm">
+            <p class="font-semibold text-slate-700">${esc(gmail.lastEmailSubject || 'Latest Gmail signal')}</p>
+            <p class="text-xs text-slate-400">${fmtDateTime(gmail.lastEmailDate)}</p>
+            <p class="text-xs text-slate-500 mt-2">${esc(gmail.lastEmailSnippet || '')}</p>
+          </div>` : '<p class="text-sm text-slate-400">No Gmail signal attached.</p>'}
+        </div>
+      </div>
+      <div class="space-y-4">
+        <div class="bg-white rounded-xl border border-slate-200 shadow-sm p-4">
+          <p class="text-label-caps font-label-caps text-slate-500 mb-2">NEXT ACTION</p>
+          <p class="text-lg font-bold text-slate-800">${esc(nextActionLabel(job._workflow?.nextBestAction || 'review'))}</p>
+          ${job._workflow?.staleness?.stale ? `<p class="text-xs text-amber-700 mt-1">${esc(workflowStaleLabel(job._workflow.staleness))}</p>` : ''}
+        </div>
+        <div class="bg-white rounded-xl border border-slate-200 shadow-sm p-4">
+          <p class="text-label-caps font-label-caps text-slate-500 mb-3">RESUME VERSIONS</p>
+          ${versions.length ? versions.slice(0, 8).map(version => `<div class="border-b border-slate-100 last:border-0 py-2">
+            <a href="${esc(version.docxUrl)}" download class="text-xs font-semibold text-blue-600 hover:underline">${esc(version.fileName)}</a>
+            <p class="text-[11px] text-slate-400">${fmtDateTime(version.generatedAt)} · ${esc(resumeVersionScoreLabel(version))}</p>
+          </div>`).join('') : '<p class="text-sm text-slate-400">No generated resume yet.</p>'}
+        </div>
+      </div>
+    </div>
+  </div>`;
+}
+
+function bindJobDetailActions(root, job) {
+  root.querySelector('#job-detail-back')?.addEventListener('click', () => {
+    currentJobDetailId = '';
+    history.pushState({ view: 'jobs' }, '', '/jobs');
+    renderJobsWorkspace();
+  });
+  root.querySelector('.job-detail-edit')?.addEventListener('click', () => openEditModal(job.id));
+  root.querySelector('.gen-btn')?.addEventListener('click', event => triggerGenerate(job.id, event.currentTarget));
+}
+
+async function loadResumeWorkspace() {
+  if (!resumeWorkspace) resumeWorkspace = await fetchResumeWorkspace();
+  return resumeWorkspace;
+}
+
+async function renderResumeWorkspace() {
+  const queueRoot = document.getElementById('resume-queue-root');
+  const versionsRoot = document.getElementById('resume-versions-root');
+  const qualityRoot = document.getElementById('resume-quality-root');
+  const countEl = document.getElementById('resume-count-label');
+  if (!queueRoot || !versionsRoot || !qualityRoot || !countEl) return;
+  try {
+    const data = await loadResumeWorkspace();
+    const filter = document.getElementById('resume-filter')?.value || '';
+    let queue = data.queue || [];
+    if (filter === 'high_ats') queue = queue.filter(item => Number(item.atsScore) >= 80);
+    else if (filter === 'low_ats') queue = queue.filter(item => item.atsScore == null || Number(item.atsScore) < 50);
+    else if (filter) queue = queue.filter(item => item.resumeStatus === filter);
+    countEl.textContent = `${queue.length} queue item${queue.length === 1 ? '' : 's'} · ${(data.versions || []).length} generated version${(data.versions || []).length === 1 ? '' : 's'}`;
+    queueRoot.innerHTML = renderResumeQueueTable(queue);
+    versionsRoot.innerHTML = renderResumeVersionHistory(data.versions || []);
+    qualityRoot.innerHTML = renderSourceQualityCoach(data.sourceQuality);
+    queueRoot.querySelectorAll('.resume-job-link').forEach(btn => btn.addEventListener('click', () => showJobDetail(btn.dataset.id)));
+    queueRoot.querySelectorAll('.gen-btn').forEach(btn => btn.addEventListener('click', () => triggerGenerate(btn.dataset.id, btn)));
+  } catch (e) {
+    countEl.textContent = 'Resume workspace unavailable';
+    queueRoot.innerHTML = `<div class="p-4 text-sm text-rose-600">${esc(e.message)}</div>`;
+  }
+}
+
+function renderResumeQueueTable(queue) {
+  if (!queue.length) return '<div class="p-12 text-center text-slate-400">No resume work matches this filter.</div>';
+  return `<table class="dashboard-table w-full text-sm">
+    <thead><tr class="border-b border-slate-200 bg-slate-50">
+      <th class="text-left px-4 py-3 text-xs font-bold text-slate-500 uppercase tracking-wide">Role</th>
+      <th class="text-left px-4 py-3 text-xs font-bold text-slate-500 uppercase tracking-wide">Status</th>
+      <th class="text-left px-4 py-3 text-xs font-bold text-slate-500 uppercase tracking-wide">ATS</th>
+      <th class="text-left px-4 py-3 text-xs font-bold text-slate-500 uppercase tracking-wide">Last Version</th>
+      <th class="text-left px-4 py-3 text-xs font-bold text-slate-500 uppercase tracking-wide">Action</th>
+    </tr></thead>
+    <tbody>${queue.map(item => `<tr class="border-b border-slate-100 hover:bg-slate-50">
+      <td class="px-4 py-3"><p class="font-semibold text-slate-800">${esc(item.company)}</p><p class="text-xs text-slate-500">${esc(item.title)}</p></td>
+      <td class="px-4 py-3"><span class="text-xs font-bold uppercase tracking-wide rounded px-2 py-0.5 ${resumeStatusClass(item.resumeStatus)}">${esc(statusDisplayLabel(item.resumeStatus))}</span></td>
+      <td class="px-4 py-3 font-bold ${item.atsScore >= 80 ? 'text-emerald-600' : item.atsScore >= 50 ? 'text-amber-600' : 'text-rose-600'}">${item.atsScore == null ? '—' : item.atsScore + '%'}</td>
+      <td class="px-4 py-3 text-xs text-slate-500">${item.latestVersion ? fmtDateTime(item.latestVersion.generatedAt) : '—'}</td>
+      <td class="px-4 py-3"><div class="flex gap-2">
+        <button class="resume-job-link text-xs font-semibold text-blue-600 border border-blue-100 rounded-lg px-3 py-1.5 hover:bg-blue-50" data-id="${esc(item.jobId)}">Open</button>
+        <button class="gen-btn text-xs font-semibold bg-primary text-white rounded-lg px-3 py-1.5 hover:opacity-90" data-id="${esc(item.jobId)}">Generate</button>
+      </div></td>
+    </tr>`).join('')}</tbody>
+  </table>`;
+}
+
+function resumeStatusClass(status) {
+  if (status === 'running') return 'bg-blue-50 text-blue-700';
+  if (status === 'blocked') return 'bg-rose-50 text-rose-700';
+  if (status === 'generated') return 'bg-emerald-50 text-emerald-700';
+  return 'bg-amber-50 text-amber-700';
+}
+
+function renderResumeVersionHistory(versions) {
+  return `<p class="text-label-caps font-label-caps text-slate-500 mb-3">VERSION HISTORY</p>
+    ${versions.length ? `<div class="divide-y divide-slate-100">${versions.slice(0, 12).map(version => `<div class="py-2 flex items-center justify-between gap-3">
+      <div class="min-w-0">
+        <a href="${esc(version.docxUrl)}" download class="text-xs font-semibold text-blue-600 hover:underline truncate block">${esc(version.fileName)}</a>
+        <p class="text-[11px] text-slate-400">${esc(version.company)} · ${esc(version.title)}</p>
+      </div>
+      <p class="text-[11px] text-slate-500 shrink-0">${fmtDateTime(version.generatedAt)} · ${esc(resumeVersionScoreLabel(version))}</p>
+    </div>`).join('')}</div>` : '<p class="text-sm text-slate-400">No generated versions yet.</p>'}`;
+}
+
+function renderSourceQualityCoach(sourceQuality) {
+  const categories = Array.isArray(sourceQuality?.categories) ? sourceQuality.categories : [];
+  const findings = sourceQuality?.findings || sourceQuality?.questions || [];
+  if (categories.length) {
+    return `<p class="text-label-caps font-label-caps text-slate-500 mb-3">SOURCE QUALITY COACH</p>
+      <div class="space-y-2">
+        ${categories.map(category => {
+          const statusCls = category.status === 'strong'
+            ? 'bg-emerald-50 text-emerald-700'
+            : category.status === 'weak'
+              ? 'bg-amber-50 text-amber-700'
+              : 'bg-rose-50 text-rose-700';
+          const prompts = Array.isArray(category.prompts) ? category.prompts : [];
+          const signals = Array.isArray(category.signals) ? category.signals.slice(0, 4).join(', ') : '';
+          return `<div class="border border-slate-100 rounded-lg p-2">
+            <div class="flex items-center justify-between gap-2 mb-1">
+              <p class="text-xs font-semibold text-slate-700">${esc(category.label || statusDisplayLabel(category.key || 'Evidence'))}</p>
+              <span class="text-[10px] font-bold uppercase rounded px-1.5 py-0.5 ${statusCls}">${esc(category.status || 'review')}</span>
+            </div>
+            <p class="text-[11px] text-slate-500">${esc(category.count ?? 0)} signal${Number(category.count) === 1 ? '' : 's'}${signals ? ` · ${esc(signals)}` : ''}</p>
+            ${prompts.length ? `<div class="mt-2 space-y-1">${prompts.slice(0, 2).map(prompt => `<p class="text-[11px] text-amber-700">${esc(prompt)}</p>`).join('')}</div>` : ''}
+          </div>`;
+        }).join('')}
+      </div>`;
+  }
+  return `<p class="text-label-caps font-label-caps text-slate-500 mb-3">SOURCE QUALITY COACH</p>
+    ${findings.length ? `<div class="space-y-2">${findings.slice(0, 8).map(item => {
+      const text = typeof item === 'string' ? item : item.question || item.message || item.category || JSON.stringify(item);
+      return `<div class="border border-slate-100 rounded-lg p-2 text-xs text-slate-600">${esc(text)}</div>`;
+    }).join('')}</div>` : '<p class="text-sm text-slate-400">No source quality gaps detected.</p>'}`;
+}
+
+async function renderOutreachWorkspace() {
+  const countEl = document.getElementById('outreach-count-label');
+  if (!countEl) return;
+  try {
+    if (!outreachWorkspace) outreachWorkspace = await fetchOutreachWorkspace();
+    const data = outreachWorkspace;
+    countEl.textContent = `${data.dueFollowUps.length} due · ${data.drafts.length} draft${data.drafts.length === 1 ? '' : 's'} · ${data.replies.length} repl${data.replies.length === 1 ? 'y' : 'ies'}`;
+    document.getElementById('outreach-summary-root').innerHTML = [
+      workspaceMetricCard('Due', data.dueFollowUps.length, 'text-amber-700'),
+      workspaceMetricCard('Drafts', data.drafts.length, 'text-blue-700'),
+      workspaceMetricCard('Sent', data.sentOutreach.length, 'text-slate-800'),
+      workspaceMetricCard('Replies', data.replies.length, 'text-emerald-700'),
+    ].join('');
+    document.getElementById('outreach-due-root').innerHTML = renderOutreachList('DUE FOLLOW-UPS', data.dueFollowUps, renderOutreachContactItem);
+    document.getElementById('outreach-drafts-root').innerHTML = renderOutreachList('DRAFTS', data.drafts, renderDraftItem);
+    document.getElementById('outreach-sent-root').innerHTML = renderOutreachList('SENT OUTREACH', data.sentOutreach, renderOutreachContactItem);
+    document.getElementById('outreach-replies-root').innerHTML = renderOutreachList('REPLIES', data.replies, renderOutreachContactItem);
+    bindOutreachWorkspaceActions(document.getElementById('view-outreach'));
+  } catch (e) {
+    countEl.textContent = 'Outreach unavailable';
+  }
+}
+
+function renderOutreachList(title, items, renderer) {
+  return `<p class="text-label-caps font-label-caps text-slate-500 mb-3">${title}</p>
+    <div class="space-y-2">${items.length ? items.slice(0, 12).map(renderer).join('') : '<p class="text-sm text-slate-400">Nothing here.</p>'}</div>`;
+}
+
+function renderOutreachContactItem(item) {
+  return `<div class="border border-slate-100 rounded-lg p-3">
+    <div class="flex items-start justify-between gap-2">
+      <div class="min-w-0">
+        <p class="text-xs font-semibold text-slate-700">${esc(item.name || item.contactName || 'Contact')}</p>
+        <p class="text-[11px] text-slate-400">${esc(item.company || item.jobCompany || '')} · ${esc(item.jobTitle || '')}</p>
+        ${item.followUpDue ? `<p class="text-[11px] text-amber-700 mt-1">Due ${esc(item.followUpDue)}</p>` : ''}
+        ${item.lastEmailSubject ? `<p class="text-[11px] text-slate-500 mt-1">${esc(item.lastEmailSubject)}</p>` : ''}
+      </div>
+      <button class="outreach-open-job text-[11px] font-semibold text-blue-600" data-id="${esc(item.jobId)}">Open</button>
+    </div>
+  </div>`;
+}
+
+function renderDraftItem(draft) {
+  return `<div class="border border-slate-100 rounded-lg p-3">
+    <div class="flex items-start justify-between gap-2 mb-2">
+      <div class="min-w-0">
+        <p class="text-xs font-semibold text-slate-700">${esc(draft.contactName || 'Contact')}</p>
+        <p class="text-[11px] text-slate-400">${esc(statusDisplayLabel(draft.type))} · ${esc(draft.company)} · ${fmtDateTime(draft.generatedAt)}</p>
+      </div>
+      <div class="flex gap-2">
+        <button class="draft-copy-btn text-[11px] font-semibold text-blue-600" data-text="${esc(draft.text)}">Copy</button>
+        <button class="draft-regenerate-btn text-[11px] font-semibold text-slate-500" data-job-id="${esc(draft.jobId)}" data-contact-id="${esc(draft.contactId)}" data-type="${esc(draft.type)}">Regenerate</button>
+        <button class="draft-mark-sent-btn text-[11px] font-semibold text-slate-500" data-job-id="${esc(draft.jobId)}" data-contact-id="${esc(draft.contactId)}">Mark sent</button>
+      </div>
+    </div>
+    <textarea readonly rows="4" class="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-xs text-slate-600 resize-y">${esc(draft.text)}</textarea>
+  </div>`;
+}
+
+function bindOutreachWorkspaceActions(root) {
+  root.querySelectorAll('.outreach-open-job').forEach(btn => btn.addEventListener('click', () => showJobDetail(btn.dataset.id)));
+  root.querySelectorAll('.draft-copy-btn').forEach(btn => btn.addEventListener('click', async () => {
+    await navigator.clipboard?.writeText(btn.dataset.text || '');
+    btn.textContent = 'Copied';
+    setTimeout(() => { btn.textContent = 'Copy'; }, 1200);
+  }));
+  root.querySelectorAll('.draft-regenerate-btn').forEach(btn => btn.addEventListener('click', async () => {
+    await generateContactOutreachDraft(btn.dataset.jobId, { contactId: btn.dataset.contactId, type: btn.dataset.type });
+    invalidateWorkspaceCaches();
+    await refreshDashboardState();
+    renderOutreachWorkspace();
+  }));
+  root.querySelectorAll('.draft-mark-sent-btn').forEach(btn => btn.addEventListener('click', async () => {
+    const job = allJobs.find(item => item.id === btn.dataset.jobId);
+    const contact = (job?.contacts || []).find(item => item.id === btn.dataset.contactId);
+    if (!contact) return;
+    await upsertJobContact(btn.dataset.jobId, { contact: { ...contact, responseStatus: 'outreach_sent' }, markOutreachSent: true });
+    invalidateWorkspaceCaches();
+    await refreshDashboardState();
+    renderOutreachWorkspace();
+  }));
+}
+
+async function renderContactsWorkspace() {
+  const root = document.getElementById('contacts-root');
+  const countEl = document.getElementById('contacts-count-label');
+  if (!root || !countEl) return;
+  try {
+    if (!contactsWorkspace) {
+      contactsWorkspace = await fetchContactsWorkspace();
+      populateWorkspaceSelect('contacts-relationship-filter', contactsWorkspace.filters.relationshipTypes, 'All relationships');
+      populateWorkspaceSelect('contacts-response-filter', contactsWorkspace.filters.responseStatuses, 'All response states');
+    }
+    const q = (document.getElementById('contacts-search')?.value || '').toLowerCase();
+    const relationship = document.getElementById('contacts-relationship-filter')?.value || '';
+    const response = document.getElementById('contacts-response-filter')?.value || '';
+    let contacts = contactsWorkspace.contacts || [];
+    if (q) contacts = contacts.filter(contact => [contact.name, contact.company, contact.jobCompany, contact.jobTitle, contact.title].join(' ').toLowerCase().includes(q));
+    if (relationship) contacts = contacts.filter(contact => contact.relationshipType === relationship);
+    if (response) contacts = contacts.filter(contact => contact.responseStatus === response);
+    countEl.textContent = `${contacts.length} of ${(contactsWorkspace.contacts || []).length} contact${(contactsWorkspace.contacts || []).length === 1 ? '' : 's'}`;
+    root.innerHTML = renderContactsTable(contacts);
+    bindContactsWorkspaceActions(root, contacts);
+  } catch (e) {
+    countEl.textContent = 'Contacts unavailable';
+    root.innerHTML = `<div class="p-4 text-sm text-rose-600">${esc(e.message)}</div>`;
+  }
+}
+
+function populateWorkspaceSelect(id, values, label) {
+  const select = document.getElementById(id);
+  if (!select || select.dataset.populated === '1') return;
+  select.innerHTML = `<option value="">${esc(label)}</option>` + values.map(value => `<option value="${esc(value)}">${esc(statusDisplayLabel(value))}</option>`).join('');
+  select.dataset.populated = '1';
+}
+
+function renderContactsTable(contacts) {
+  if (!contacts.length) return '<div class="p-12 text-center text-slate-400">No contacts match these filters.</div>';
+  return `<table class="dashboard-table w-full text-sm">
+    <thead><tr class="border-b border-slate-200 bg-slate-50">
+      <th class="text-left px-4 py-3 text-xs font-bold text-slate-500 uppercase tracking-wide">Contact</th>
+      <th class="text-left px-4 py-3 text-xs font-bold text-slate-500 uppercase tracking-wide">Relationship</th>
+      <th class="text-left px-4 py-3 text-xs font-bold text-slate-500 uppercase tracking-wide">Response</th>
+      <th class="text-left px-4 py-3 text-xs font-bold text-slate-500 uppercase tracking-wide">Follow-up</th>
+      <th class="text-left px-4 py-3 text-xs font-bold text-slate-500 uppercase tracking-wide">Action</th>
+    </tr></thead>
+    <tbody>${contacts.map(contact => `<tr class="border-b border-slate-100 hover:bg-slate-50">
+      <td class="px-4 py-3"><p class="font-semibold text-slate-800">${esc(contact.name)}</p><p class="text-xs text-slate-500">${esc(contact.title || '')} · ${esc(contact.jobCompany)} · ${esc(contact.jobTitle)}</p></td>
+      <td class="px-4 py-3 text-xs text-slate-600">${esc(statusDisplayLabel(contact.relationshipType))}</td>
+      <td class="px-4 py-3 text-xs text-slate-600">${esc(statusDisplayLabel(contact.responseStatus))}</td>
+      <td class="px-4 py-3 text-xs ${contact.followUpDueInDays != null && contact.followUpDueInDays <= 0 ? 'text-amber-700 font-semibold' : 'text-slate-500'}">${esc(contact.followUpDue || '—')}</td>
+      <td class="px-4 py-3"><div class="flex gap-2">
+        <button class="contact-open-job text-xs font-semibold text-blue-600 border border-blue-100 rounded-lg px-3 py-1.5 hover:bg-blue-50" data-id="${esc(contact.jobId)}">Open</button>
+        <button class="contact-edit-workspace text-xs font-semibold text-slate-600 border border-slate-200 rounded-lg px-3 py-1.5 hover:bg-slate-50" data-job-id="${esc(contact.jobId)}" data-contact-id="${esc(contact.id)}">Edit</button>
+      </div></td>
+    </tr>`).join('')}</tbody>
+  </table>`;
+}
+
+function bindContactsWorkspaceActions(root, contacts) {
+  root.querySelectorAll('.contact-open-job').forEach(btn => btn.addEventListener('click', () => showJobDetail(btn.dataset.id)));
+  root.querySelectorAll('.contact-edit-workspace').forEach(btn => btn.addEventListener('click', async () => {
+    const contact = contacts.find(item => item.id === btn.dataset.contactId && item.jobId === btn.dataset.jobId);
+    if (!contact) return;
+    const followUpDue = window.prompt('Follow-up due date (YYYY-MM-DD)', contact.followUpDue || '');
+    if (followUpDue == null) return;
+    await upsertJobContact(contact.jobId, { contact: { ...contact, followUpDue } });
+    invalidateWorkspaceCaches();
+    await refreshDashboardState();
+    renderContactsWorkspace();
+  }));
+}
+
+async function renderAnalyticsWorkspace() {
+  const countEl = document.getElementById('analytics-count-label');
+  if (!countEl) return;
+  try {
+    if (!analyticsSummary) analyticsSummary = await fetchAnalyticsSummary();
+    const data = analyticsSummary;
+    countEl.textContent = `${data.activeOpportunities} active opportunities · average ATS ${data.averageActiveAtsScore ?? '—'}%`;
+    document.getElementById('analytics-summary-root').innerHTML = [
+      workspaceMetricCard('Active', data.activeOpportunities, 'text-slate-800'),
+      workspaceMetricCard('Avg ATS', data.averageActiveAtsScore == null ? '—' : data.averageActiveAtsScore + '%', 'text-blue-700'),
+      workspaceMetricCard('Follow-ups', data.followUpDebt.count, 'text-amber-700'),
+      workspaceMetricCard('Stale', data.staleLeads.count, 'text-rose-700'),
+    ].join('');
+    document.getElementById('analytics-stage-root').innerHTML = renderKeyValuePanel('PIPELINE DISTRIBUTION', data.stageDistribution);
+    document.getElementById('analytics-resume-root').innerHTML = renderKeyValuePanel('RESUME SCORE DISTRIBUTION', data.resumeScoreDistribution);
+    document.getElementById('analytics-followup-root').innerHTML = renderOutreachList('FOLLOW-UP DEBT', data.followUpDebt.items || [], renderOutreachContactItem);
+    document.getElementById('analytics-outreach-root').innerHTML = renderKeyValuePanel('OUTREACH RESPONSE STATUS', data.outreachResponseStatus);
+  } catch (e) {
+    countEl.textContent = 'Analytics unavailable';
+  }
+}
+
+async function renderSettingsWorkspace() {
+  const countEl = document.getElementById('settings-count-label');
+  if (!countEl) return;
+  try {
+    if (!settingsHealth) settingsHealth = await fetchSettingsHealth();
+    const data = settingsHealth;
+    const failures = (data.checks || []).filter(check => check.status === 'FAIL').length;
+    const warnings = (data.checks || []).filter(check => check.status === 'WARN').length;
+    countEl.textContent = `${failures} failures · ${warnings} warnings · secrets hidden`;
+    document.getElementById('settings-paths-root').innerHTML = `<p class="text-label-caps font-label-caps text-slate-500 mb-3">LOCAL PATHS</p>
+      <div class="grid grid-cols-2 gap-2 text-xs">${Object.entries(data.paths || {}).map(([key, value]) => `<div class="border border-slate-100 rounded-lg p-2"><p class="font-semibold text-slate-500">${esc(statusDisplayLabel(key))}</p><p class="text-slate-700 break-all">${esc(value)}</p></div>`).join('')}</div>`;
+    document.getElementById('settings-files-root').innerHTML = `<p class="text-label-caps font-label-caps text-slate-500 mb-3">CONFIG AND DATA FILES</p>
+      <div class="divide-y divide-slate-100">${(data.files || []).map(file => `<div class="py-2 flex items-center justify-between gap-3">
+        <div class="min-w-0"><p class="text-xs font-semibold text-slate-700">${esc(file.label)}</p><p class="text-[11px] text-slate-400 break-all">${esc(file.path)}</p></div>
+        <span class="text-[10px] font-bold uppercase rounded px-2 py-0.5 ${file.present ? 'bg-emerald-50 text-emerald-700' : 'bg-rose-50 text-rose-700'}">${file.present ? 'Present' : 'Missing'}</span>
+      </div>`).join('')}</div>`;
+    document.getElementById('settings-health-root').innerHTML = `<p class="text-label-caps font-label-caps text-slate-500 mb-3">HEALTH CHECKS</p>
+      <div class="divide-y divide-slate-100">${(data.checks || []).map(check => `<div class="py-2 flex items-start justify-between gap-3">
+        <div><p class="text-xs font-semibold text-slate-700">${esc(check.name)}</p><p class="text-[11px] text-slate-500">${esc(check.message)}</p></div>
+        <span class="text-[10px] font-bold uppercase rounded px-2 py-0.5 ${healthStatusClass(check.status)}">${esc(check.status)}</span>
+      </div>`).join('')}</div>`;
+  } catch (e) {
+    countEl.textContent = 'Settings unavailable';
+  }
+}
+
+function renderKeyValuePanel(title, values = {}) {
+  return `<p class="text-label-caps font-label-caps text-slate-500 mb-3">${esc(title)}</p>
+    <div class="divide-y divide-slate-100">${Object.entries(values).map(([key, value]) => `<div class="py-2 flex items-center justify-between gap-3">
+      <span class="text-xs font-semibold text-slate-600">${esc(statusDisplayLabel(key))}</span>
+      <span class="text-sm font-bold text-slate-800">${esc(value)}</span>
+    </div>`).join('') || '<p class="text-sm text-slate-400">No data.</p>'}</div>`;
+}
+
+function workspaceMetricCard(label, value, color) {
+  return `<div class="bg-white border border-slate-200 rounded-lg p-3 min-h-[72px]">
+    <p class="text-[10px] font-bold uppercase tracking-wide text-slate-400">${esc(label)}</p>
+    <p class="text-lg font-bold ${color}">${esc(value)}</p>
+  </div>`;
+}
+
+function healthStatusClass(status) {
+  if (status === 'PASS') return 'bg-emerald-50 text-emerald-700';
+  if (status === 'WARN') return 'bg-amber-50 text-amber-700';
+  return 'bg-rose-50 text-rose-700';
 }
 
 // ─── Rejected roles ──────────────────────────────────────────────────────────
@@ -1586,7 +2244,7 @@ function renderRejected() {
       case 'company_asc':  return (a.company||'').toLowerCase().localeCompare((b.company||'').toLowerCase());
       case 'company_desc': return (b.company||'').toLowerCase().localeCompare((a.company||'').toLowerCase());
       case 'score_desc': {
-        const as = a.score ?? -1, bs = b.score ?? -1;
+        const as = atsPercent(a) ?? -1, bs = atsPercent(b) ?? -1;
         return bs - as;
       }
       default: return (b.date_updated||'').localeCompare(a.date_updated||'');
@@ -1604,9 +2262,9 @@ function renderRejected() {
   tbody.innerHTML = '';
 
   list.forEach(job => {
-    const pct      = job.score != null ? Math.round(job.score * 20) : null;
-    const atsColor = pct == null ? 'text-slate-400' : pct >= 80 ? 'text-emerald-600' : pct >= 50 ? 'text-amber-600' : 'text-rose-600';
-    const atsStr   = pct != null ? pct + '%' : '—';
+    const atsColor = atsScoreColor(job);
+    const atsStr   = atsScoreLabel(job);
+    const nextStep = compactNextStep(job);
     const detailId = 'rej-detail-' + job.id;
 
     const tr = document.createElement('tr');
@@ -1621,6 +2279,7 @@ function renderRejected() {
           <div class="min-w-0">
             <p class="font-semibold text-on-surface truncate max-w-xs">${esc(job.company)}</p>
             <p class="text-xs text-slate-500 truncate max-w-xs">${esc(job.title)}</p>
+            ${nextStep ? `<p class="text-[11px] text-slate-400 truncate max-w-xs mt-0.5">Next: ${esc(nextStep)}</p>` : ''}
             ${job.last_email_subject ? `<p class="text-[11px] text-slate-400 truncate max-w-xs mt-0.5">${esc(job.last_email_subject)}</p>` : ''}
           </div>
         </div>
@@ -1687,10 +2346,20 @@ function renderRejected() {
 
 function latestNoteText(notesStr) {
   if (!notesStr || !notesStr.trim()) return '';
-  const first = notesStr.split('\n').find(l => l.trim());
-  if (!first) return '';
-  const m = first.match(/^\d{4}-\d{2}-\d{2}:\s*(.*)/);
-  return m ? m[1].trim() : first.trim();
+  const lines = notesStr.split('\n');
+  const startIdx = lines.findIndex(l => l.trim());
+  if (startIdx === -1) return '';
+  const first = lines[startIdx].trim();
+  const dated = first.match(/^(\d{4}-\d{2}-\d{2}):\s*(.*)/);
+  if (!dated) return first;
+
+  const noteLines = [dated[2]];
+  for (let i = startIdx + 1; i < lines.length; i += 1) {
+    const line = lines[i];
+    if (/^\s*\d{4}-\d{2}-\d{2}:\s*/.test(line)) break;
+    noteLines.push(line);
+  }
+  return noteLines.join('\n').trim();
 }
 
 function renderNotesLog(notesStr) {
@@ -1702,12 +2371,44 @@ function renderNotesLog(notesStr) {
   }).join('');
 }
 
+function openInterviewNote(jobId) {
+  const detailRow = document.getElementById('int-detail-' + jobId);
+  if (!detailRow) return;
+  detailRow.classList.remove('hidden');
+  const noteInput = detailRow.querySelector(`.int-note-input[data-id="${CSS.escape(jobId)}"]`);
+  noteInput?.focus();
+}
+
 // ─── Job deletion ────────────────────────────────────────────────────────────
+async function toggleJobFlag(jobId, btn) {
+  const job = allJobs.find(j => j.id === jobId);
+  if (!job) return;
+  const nowFlagged = !job.flagged;
+  job.flagged = nowFlagged;
+  // Optimistically update the button
+  const icon = btn.querySelector('.material-symbols-outlined');
+  btn.className = btn.className.replace(/text-(?:amber-4|amber-5|slate-2)\d+/g, '').trim();
+  btn.classList.add(nowFlagged ? 'text-amber-400' : 'text-slate-200', nowFlagged ? 'hover:text-amber-500' : 'hover:text-amber-300');
+  btn.title = nowFlagged ? 'Unflag job' : 'Flag job';
+  if (icon) icon.style.fontVariationSettings = nowFlagged ? "'FILL' 1" : '';
+  try {
+    await fetch(`/api/jobs/${encodeURIComponent(jobId)}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ flagged: nowFlagged }),
+    });
+  } catch {
+    job.flagged = !nowFlagged; // revert on failure
+    applyOppFilters();
+  }
+}
+
 async function deleteJob(jobId) {
   if (!confirm('Remove this job from the tracker?')) return;
   try {
     await deleteJobRequest(jobId);
     allJobs = allJobs.filter(j => j.id !== jobId);
+    invalidateWorkspaceCaches();
     // Remove associated rows immediately before re-render
     ['detail-', 'opp-prog-'].forEach(prefix => {
       document.getElementById(prefix + jobId)?.remove();
@@ -1722,18 +2423,82 @@ async function deleteJob(jobId) {
 }
 
 // ─── Resume generation ────────────────────────────────────────────────────────
+function bulkGenerateCandidates() {
+  return currentVisibleOpportunityJobs
+    .filter(job => jobNeedsResume(job))
+    .filter(job => !activeResumeJobs.has(job.id));
+}
+
+function updateBulkGenerateButton() {
+  const btn = document.getElementById('bulk-generate-visible-btn');
+  const label = document.getElementById('bulk-generate-visible-label');
+  if (!btn || !label) return;
+  const candidates = bulkGenerateCandidates();
+  btn.classList.toggle('hidden', candidates.length === 0 && !bulkResumeRunning);
+  btn.disabled = bulkResumeRunning || candidates.length === 0;
+  label.textContent = bulkResumeRunning
+    ? 'Starting resumes...'
+    : `Generate visible (${candidates.length})`;
+}
+
+async function triggerBulkGenerateVisible() {
+  const jobs = bulkGenerateCandidates();
+  if (!jobs.length || bulkResumeRunning) return;
+
+  bulkResumeRunning = true;
+  updateBulkGenerateButton();
+  let index = 0;
+
+  async function worker() {
+    while (index < jobs.length) {
+      const job = jobs[index++];
+      await triggerGenerate(job.id);
+    }
+  }
+
+  await Promise.all(Array.from(
+    { length: Math.min(BULK_RESUME_CONCURRENCY, jobs.length) },
+    () => worker()
+  ));
+  bulkResumeRunning = false;
+  updateBulkGenerateButton();
+}
+
 async function triggerGenerate(jobId, btn) {
   setGeneratingState(jobId, 'Generating…');
   showAllProgSections(jobId);
   activeResumeJobs.add(jobId);
+  updateBulkGenerateButton();
 
   try {
-    const result = await createDocs(jobId);
+    const preflight = await createDocs(jobId);
+    const questions = preflight.needsGapReview ? (preflight.questions || []) : [];
+    if (questions.length) {
+      appendLog(jobId, 'ok', `Evidence check: ${questions.length} gap question${questions.length === 1 ? '' : 's'} before drafting.`);
+      const answers = [];
+      for (const item of questions) {
+        const answer = window.prompt(`${item.question}\n\nLeave blank or type "no" if not applicable.`);
+        if (answer == null) {
+          appendLog(jobId, 'error', 'Resume generation cancelled during evidence check.');
+          activeResumeJobs.delete(jobId);
+          resetBtn(jobId);
+          updateBulkGenerateButton();
+          return;
+        }
+        answers.push({ gap: item.gap, answer });
+      }
+      const update = await submitResumeGapAnswers(jobId, answers);
+      if (update.updated) appendLog(jobId, 'ok', `Brag document updated with ${update.additions.length} confirmed evidence item${update.additions.length === 1 ? '' : 's'}.`);
+    }
+    const result = preflight.started
+      ? preflight
+      : await createDocs(jobId, { gapReviewComplete: true });
     if (result.alreadyRunning) appendLog(jobId, 'ok', 'Resume generation already running on server.');
   } catch (e) {
     appendLog(jobId, 'error', (e.response ? 'Server error: ' : 'Network error: ') + e.message);
     activeResumeJobs.delete(jobId);
     resetBtn(jobId);
+    updateBulkGenerateButton();
   }
 }
 
@@ -1752,7 +2517,7 @@ function showProgSection(id, { clear = true } = {}) {
 }
 
 function genBtns(jobId) {
-  return document.querySelectorAll(`.gen-btn[data-id="${jobId}"], .int-gen-btn[data-id="${jobId}"], .rej-gen-btn[data-id="${jobId}"]`);
+  return document.querySelectorAll(`.gen-btn[data-id="${jobId}"], .rej-gen-btn[data-id="${jobId}"]`);
 }
 
 function setGeneratingState(jobId, label = 'Generating…') {
@@ -1787,6 +2552,7 @@ function processResumeProgress({ jobId, stage, status, message }) {
   if (kind === 'error') {
     activeResumeJobs.delete(jobId);
     resetBtn(jobId);
+    updateBulkGenerateButton();
   }
 }
 
@@ -1796,6 +2562,19 @@ function processResumeComplete({ jobId, docxUrl, pdfUrl }) {
   if (!jobId || !docxUrl) return;
   showAllProgSections(jobId, { clear: false });
   activeResumeJobs.delete(jobId);
+  const job = allJobs.find(item => item.id === jobId);
+  if (job) {
+    job.generatedDocs = {
+      ...(job.generatedDocs || {}),
+      default: {
+        ...(job.generatedDocs?.default || {}),
+        docxUrl,
+        pdfUrl: pdfUrl || null,
+        generatedAt: new Date().toISOString(),
+      },
+    };
+  }
+  invalidateWorkspaceCaches();
   genBtns(jobId).forEach(btn => {
     btn.style.backgroundColor = '#059669';
     btn.textContent = '✓ Complete';
@@ -1809,6 +2588,7 @@ function processResumeComplete({ jobId, docxUrl, pdfUrl }) {
     if (dl) dl.innerHTML = links;
   });
   setTimeout(() => resetBtn(jobId, 'Regenerate'), 1500);
+  updateBulkGenerateButton();
 }
 
 socket.on('complete', processResumeComplete);
@@ -1852,6 +2632,7 @@ function restoreResumeRun(run) {
     if (prog) updateBtnProgress(run.jobId, prog.started, label);
   } else {
     activeResumeJobs.delete(run.jobId);
+    updateBulkGenerateButton();
   }
 }
 
@@ -1859,6 +2640,7 @@ function markResumeRunStopped(jobId) {
   activeResumeJobs.delete(jobId);
   appendLog(jobId, 'error', 'Resume generation stopped before completion. Retry to start a new run.');
   resetBtn(jobId);
+  updateBulkGenerateButton();
 }
 
 function appendLog(jobId, kind, text) {

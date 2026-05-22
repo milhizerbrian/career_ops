@@ -47,6 +47,33 @@ describe('evaluate.mjs CLI wrapper', () => {
     assert.doesNotMatch(source, /function fetchWorkdayJob/);
   });
 
+  it('uses Claude-first evaluation while preserving LM Studio rollback', () => {
+    const cli = fs.readFileSync(path.resolve(APP_ROOT, 'evaluate.mjs'), 'utf8');
+    const evaluator = fs.readFileSync(path.resolve(APP_ROOT, 'lib/evaluator.mjs'), 'utf8');
+    const envExample = fs.readFileSync(path.resolve(APP_ROOT, '.env.example'), 'utf8');
+
+    assert.match(envExample, /PREFER_CLAUDE_EVALUATION=1/);
+    assert.match(envExample, /CLAUDE_EVALUATION_MODEL=claude-sonnet-4-6/);
+    assert.match(cli, /preferClaudeEvaluation/);
+    assert.match(cli, /Scoring engine:\s+Claude/);
+    assert.match(cli, /set PREFER_CLAUDE_EVALUATION=1/);
+    assert.match(evaluator, /scoreWithClaude/);
+    assert.match(evaluator, /PREFER_CLAUDE_EVALUATION/);
+    assert.match(evaluator, /Scoring with Claude/);
+    assert.match(evaluator, /scoreWithLmStudio/);
+  });
+
+  it('applies the shared humanizer standard to evaluation summaries', () => {
+    const evaluator = fs.readFileSync(path.resolve(APP_ROOT, 'lib/evaluator.mjs'), 'utf8');
+    const humanizer = fs.readFileSync(path.resolve(APP_ROOT, 'lib/humanizer.mjs'), 'utf8');
+
+    assert.match(evaluator, /HUMANIZED_OUTPUT_RULES/);
+    assert.match(evaluator, /score_analysis/);
+    assert.match(evaluator, /role_summary/);
+    assert.match(humanizer, /Write like a specific senior operator/);
+    assert.match(humanizer, /Keep the required output format exactly/);
+  });
+
   it('uses the shared tracker entry shape expected by CLI and dashboard paths', () => {
     const entry = buildEntry(
       'url-test',

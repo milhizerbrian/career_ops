@@ -18,6 +18,30 @@ export function fetchResumeRuns() {
   return jsonFetch('/api/resume-runs');
 }
 
+export function fetchJobDetail(jobId) {
+  return jsonFetch('/api/jobs/' + encodeURIComponent(jobId));
+}
+
+export function fetchResumeWorkspace() {
+  return jsonFetch('/api/workspaces/resume');
+}
+
+export function fetchOutreachWorkspace() {
+  return jsonFetch('/api/workspaces/outreach');
+}
+
+export function fetchContactsWorkspace() {
+  return jsonFetch('/api/workspaces/contacts');
+}
+
+export function fetchAnalyticsSummary() {
+  return jsonFetch('/api/analytics/summary');
+}
+
+export function fetchSettingsHealth() {
+  return jsonFetch('/api/settings/health');
+}
+
 export function evaluateUrl(payload) {
   return jsonFetch('/api/evaluate-url', {
     method: 'POST',
@@ -26,11 +50,23 @@ export function evaluateUrl(payload) {
   });
 }
 
-export function createDocs(jobId) {
+export function createDocs(jobId, body = {}) {
   return jsonFetch('/api/create-docs/' + jobId, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({}),
+    body: JSON.stringify(body),
+  });
+}
+
+export function fetchResumeGapQuestions(jobId) {
+  return jsonFetch('/api/resume-gap-questions/' + jobId);
+}
+
+export function submitResumeGapAnswers(jobId, answers) {
+  return jsonFetch('/api/resume-gap-answers/' + jobId, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ answers }),
   });
 }
 

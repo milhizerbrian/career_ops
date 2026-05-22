@@ -45,7 +45,6 @@ describe('atomic file helpers', () => {
 describe('runtime writers use atomic helpers', () => {
   it('uses helpers for replace-style runtime files where practical', () => {
     assert.match(read('gmail-sync.mjs'), /writeJsonAtomic\(GMAIL_JOBS_PATH/);
-    assert.match(read('lib/ab-analytics.mjs'), /writeJsonAtomic\(ANALYTICS_PATH/);
     assert.match(read('lib/data.mjs'), /writeTextAtomic\(filePath, updated\)/);
     assert.match(read('scan.mjs'), /writeTextAtomic\(PIPELINE_PATH, text\)/);
     assert.match(read('scan-linkedin.mjs'), /writeTextAtomic\(PIPELINE_PATH, text\)/);

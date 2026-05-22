@@ -14,6 +14,31 @@ describe('frontend ES modules', () => {
     assert.doesNotMatch(html, /<script>\s*\/\/ ─── State/);
   });
 
+  it('allows horizontal scrolling across all dashboard views', () => {
+    const html = read('public/index.html');
+
+    assert.match(html, /\.dashboard-scroll \{ overflow: auto; \}/);
+    assert.match(html, /\.dashboard-view \{ min-width: 960px; \}/);
+    assert.match(html, /\.dashboard-table \{ min-width: 960px; \}/);
+    assert.match(html, /class="dashboard-scroll flex-1 p-6 space-y-6"/);
+    for (const viewId of [
+      'view-dashboard',
+      'view-jobs',
+      'view-resume',
+      'view-outreach',
+      'view-contacts',
+      'view-gmail-review',
+      'view-interviews',
+      'view-rejected',
+      'view-analytics',
+      'view-settings',
+    ]) {
+      assert.match(html, new RegExp(`id="${viewId}"[^>]*class="dashboard-view"`));
+    }
+    assert.ok((html.match(/overflow-x-auto/g) || []).length >= 5);
+    assert.ok((html.match(/dashboard-table w-full text-sm/g) || []).length >= 3);
+  });
+
   it('keeps expected frontend modules present and imported', () => {
     for (const file of [
       'public/js/api.js',
@@ -84,13 +109,37 @@ describe('frontend ES modules', () => {
 
   it('cleans up resume helper processes after generation ends', () => {
     const server = read('server.mjs');
+    const coordinator = read('lib/resume-run-coordinator.mjs');
     const cleanup = read('lib/resume-resource-cleanup.mjs');
+    const throttle = read('lib/resume-resource-throttle.mjs');
+    const pdf = read('lib/pdf-utils.mjs');
 
-    assert.match(server, /cleanupResumeResourceProcesses/);
+    assert.match(server, /beginSharedResumeResources/);
+    assert.match(server, /canStartResumeRun/);
+    assert.match(server, /resumeMaxConcurrent/);
+    assert.match(coordinator, /cleanupResumeResourceProcesses/);
+    assert.match(coordinator, /beginResumeResourceThrottle/);
+    assert.match(coordinator, /scheduleResumeHelperRenice/);
+    assert.match(coordinator, /RESUME_MAX_CONCURRENT/);
     assert.match(server, /finally/);
     assert.match(cleanup, /llmworker/);
     assert.match(cleanup, /headless LibreOffice/);
     assert.match(cleanup, /RESUME_CLEANUP_PROCESSES/);
+    assert.match(throttle, /RESUME_RESOURCE_THROTTLE/);
+    assert.match(throttle, /RESUME_NICE_LEVEL/);
+    assert.match(throttle, /renice/);
+    assert.match(pdf, /niceCommand/);
+  });
+
+  it('wires bulk visible resume generation with client-side concurrency', () => {
+    const html = read('public/index.html');
+    const dashboard = read('public/js/dashboard.js');
+
+    assert.match(html, /bulk-generate-visible-btn/);
+    assert.match(dashboard, /BULK_RESUME_CONCURRENCY = 3/);
+    assert.match(dashboard, /triggerBulkGenerateVisible/);
+    assert.match(dashboard, /bulkGenerateCandidates/);
+    assert.match(dashboard, /Promise\.all/);
   });
 
   it('renders lightweight generated resume version history', () => {
@@ -128,6 +177,40 @@ describe('frontend ES modules', () => {
     assert.match(dashboard, /Workflow Timeline/);
   });
 
+  it('uses pipeline breakdown as the top dashboard card row', () => {
+    const html = read('public/index.html');
+    const dashboard = read('public/js/dashboard.js');
+
+    assert.doesNotMatch(html, /id="kpi-grid"/);
+    assert.match(html, /id="pipeline-breakdown" class="grid grid-cols-7 gap-2"/);
+    assert.match(dashboard, /renderPipelineBreakdown/);
+    assert.match(dashboard, /min-h-\[82px\]/);
+    assert.doesNotMatch(dashboard, /document\.getElementById\('kpi-grid'\)\.innerHTML/);
+  });
+
+  it('shows workflow card details on hover', () => {
+    const dashboard = read('public/js/dashboard.js');
+
+    assert.match(dashboard, /role="tooltip"/);
+    assert.match(dashboard, /group-hover:block/);
+    assert.match(dashboard, /aria-describedby="health-detail-\$\{filter\}"/);
+    assert.match(dashboard, /Active leads without a generated resume/);
+  });
+
+  it('wires resizable and collapsible sidebar controls', () => {
+    const html = read('public/index.html');
+    const dashboard = read('public/js/dashboard.js');
+
+    assert.match(html, /id="sidebar-toggle"/);
+    assert.match(html, /id="sidebar-resize-handle"/);
+    assert.match(html, /--sidebar-width/);
+    assert.match(html, /body\.sidebar-collapsed/);
+    assert.match(dashboard, /setupSidebarControls/);
+    assert.match(dashboard, /careerOpsSidebarWidth/);
+    assert.match(dashboard, /careerOpsSidebarCollapsed/);
+    assert.match(dashboard, /setPointerCapture/);
+  });
+
   it('wires manual job workflow action controls', () => {
     const dashboard = read('public/js/dashboard.js');
     const api = read('public/js/api.js');
@@ -161,5 +244,71 @@ describe('frontend ES modules', () => {
     assert.match(dashboard, /outreachDrafts/);
     assert.match(api, /generateContactOutreachDraft/);
     assert.match(server, /\/api\/jobs\/:id\/contacts\/outreach-draft/);
+  });
+
+  it('uses real ATS match scores and compact next-step labels in job rows', () => {
+    const dashboard = read('public/js/dashboard.js');
+    const jobsTable = read('public/js/jobs-table.js');
+
+    assert.match(dashboard, /function atsPercent\(job\)/);
+    assert.match(dashboard, /job\?\._ats\?\.score/);
+    assert.match(dashboard, /const scored\s+= activeJobs\.map\(atsPercent\)/);
+    assert.match(dashboard, /const pct = atsPercent\(j\)/);
+    assert.match(jobsTable, /function atsScore\(job\)/);
+    assert.match(jobsTable, /job\?\._ats\?\.score/);
+    assert.match(dashboard, /Next: \$\{esc\(nextStep\)\}/);
+  });
+
+  it('replaces interview resume generation with an add-note shortcut', () => {
+    const dashboard = read('public/js/dashboard.js');
+
+    assert.match(dashboard, /int-add-note-btn/);
+    assert.match(dashboard, />Add note<\/button>/);
+    assert.match(dashboard, /function openInterviewNote\(jobId\)/);
+    assert.match(dashboard, /noteInput\?\.focus\(\)/);
+    assert.doesNotMatch(dashboard, /int-gen-btn/);
+  });
+
+  it('renders the full latest interview note under Stage in compact rows', () => {
+    const dashboard = read('public/js/dashboard.js');
+
+    assert.match(dashboard, /function latestNoteText\(notesStr\)/);
+    assert.match(dashboard, /noteLines\.push\(line\)/);
+    assert.match(dashboard, /whitespace-pre-wrap break-words max-w-sm/);
+    assert.doesNotMatch(dashboard, /text-slate-400 truncate max-w-\[220px\]/);
+  });
+
+  it('wires operational workspace routes and API helpers', () => {
+    const html = read('public/index.html');
+    const dashboard = read('public/js/dashboard.js');
+    const api = read('public/js/api.js');
+    const server = read('server.mjs');
+
+    for (const view of ['jobs', 'resume', 'outreach', 'contacts', 'analytics', 'settings']) {
+      assert.match(html, new RegExp(`data-view="${view}"`));
+      assert.match(html, new RegExp(`id="view-${view}"`));
+    }
+    for (const helper of [
+      'fetchJobDetail',
+      'fetchResumeWorkspace',
+      'fetchOutreachWorkspace',
+      'fetchContactsWorkspace',
+      'fetchAnalyticsSummary',
+      'fetchSettingsHealth',
+    ]) {
+      assert.match(api, new RegExp(`function ${helper}`));
+      assert.match(dashboard, new RegExp(helper));
+    }
+    assert.match(server, /\/api\/workspaces\/resume/);
+    assert.match(server, /\/api\/workspaces\/outreach/);
+    assert.match(server, /\/api\/workspaces\/contacts/);
+    assert.match(server, /\/api\/analytics\/summary/);
+    assert.match(server, /\/api\/settings\/health/);
+    assert.match(server, /\/jobs\/:id/);
+    assert.match(dashboard, /showJobDetail/);
+    assert.match(dashboard, /renderJobDetailWorkspace/);
+    assert.match(dashboard, /open-job-btn/);
+    assert.match(dashboard, /category\.label/);
+    assert.match(dashboard, /category\.signals/);
   });
 });

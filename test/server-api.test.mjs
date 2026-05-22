@@ -165,4 +165,43 @@ describe('server API routes', () => {
     assert.match(result.body.draft.text, /Acme Security/);
     assert.equal(tracker().job1.contacts[0].outreachDrafts.length, 1);
   });
+
+  it('serves a full job read model and 404s missing job details', async () => {
+    const found = await request('/api/jobs/job1');
+    assert.equal(found.res.status, 200);
+    assert.equal(found.body.id, 'job1');
+    assert.equal(found.body._workflow.nextBestAction, 'prep_interview');
+    assert.equal(Array.isArray(found.body.contacts), true);
+    assert.equal(found.body.gmail.lastEmailSubject, 'Acme next steps');
+
+    const missing = await request('/api/jobs/nope');
+    assert.equal(missing.res.status, 404);
+  });
+
+  it('serves operational workspace read models', async () => {
+    const resume = await request('/api/workspaces/resume');
+    assert.equal(resume.res.status, 200);
+    assert.equal(Array.isArray(resume.body.queue), true);
+    assert.equal(Array.isArray(resume.body.versions), true);
+
+    const outreach = await request('/api/workspaces/outreach');
+    assert.equal(outreach.res.status, 200);
+    assert.equal(outreach.body.drafts.length, 1);
+
+    const contacts = await request('/api/workspaces/contacts');
+    assert.equal(contacts.res.status, 200);
+    assert.equal(contacts.body.contacts[0].name, 'Alex Morgan');
+
+    const analytics = await request('/api/analytics/summary');
+    assert.equal(analytics.res.status, 200);
+    assert.equal(analytics.body.activeOpportunities, 1);
+  });
+
+  it('serves non-secret settings health', async () => {
+    const result = await request('/api/settings/health');
+    assert.equal(result.res.status, 200);
+    assert.ok(result.body.paths.dataDir);
+    assert.equal(Array.isArray(result.body.files), true);
+    assert.doesNotMatch(JSON.stringify(result.body), /GMAIL_CLIENT_ID.*client/i);
+  });
 });

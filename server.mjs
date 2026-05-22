@@ -12,17 +12,16 @@ import fs from 'fs';
 import { getCachedDashboard, invalidateCache } from './lib/cache.mjs';
 import { loadBragDoc, loadJobById, loadPipeline, dismissPipelineItem, updateJob } from './lib/data.mjs';
 import { updateTracker } from './lib/tracker-store.mjs';
-import { generateResume, generateResumeDraft, generateResumeFinish, analyzeGaps } from './lib/resume-gen.mjs';
+import { generateResume, analyzeGaps, generateGapQuestions, applyGapAnswersToBragDoc, assessStoredJobDescription } from './lib/resume-gen.mjs';
 import { startWatcher } from './lib/watcher.mjs';
 import { scoreAtsMatch } from './lib/ats-utils.mjs';
-import { buildAbAnalytics, recordSubmission } from './lib/ab-analytics.mjs';
 import { computeOiScore } from './lib/opportunity-intelligence.mjs';
 import { evaluateUrl } from './lib/evaluator.mjs';
 import { buildGeneratedDocEntry } from './lib/generated-docs.mjs';
 import { normalizeStatus } from './lib/status-utils.mjs';
 import { validatePublicHttpUrl } from './lib/url-safety.mjs';
 import { analyzeBragDocQuality } from './lib/brag-quality.mjs';
-import { cleanupResumeResourceProcesses } from './lib/resume-resource-cleanup.mjs';
+import { beginSharedResumeResources, canStartResumeRun, resumeMaxConcurrent } from './lib/resume-run-coordinator.mjs';
 import { appendWorkflowEvent, applyManualWorkflowEvent } from './lib/job-workflow.mjs';
 import { upsertJobContact } from './lib/job-contacts.mjs';
 import { createOutreachDraft, storeOutreachDraft } from './lib/outreach-drafts.mjs';
@@ -33,6 +32,15 @@ import {
   recordContactAttempt,
   buildRecruiterAnalytics,
 } from './lib/recruiter-targeting.mjs';
+import {
+  buildAnalyticsSummary,
+  buildContactsWorkspace,
+  buildJobReadModel,
+  buildOutreachWorkspace,
+  buildResumeWorkspace,
+  buildSettingsHealth,
+} from './lib/workspace-read-models.mjs';
+import { runHealthChecks } from './scripts/health-check.mjs';
 
 const APP_ROOT = path.dirname(fileURLToPath(import.meta.url));
 
@@ -101,8 +109,26 @@ function resumeIo() {
   };
 }
 
+function runningResumeCount() {
+  return [...resumeRuns.values()].filter(run => run.status === 'running').length;
+}
+
 // SPA entries for URL-addressable dashboard views
-const SPA_ROUTES = ['/', '/dashboard', '/gmail-review', '/gmail-revoew', '/interviews', '/rejected'];
+const SPA_ROUTES = [
+  '/',
+  '/dashboard',
+  '/jobs',
+  '/jobs/:id',
+  '/resume',
+  '/outreach',
+  '/contacts',
+  '/gmail-review',
+  '/gmail-revoew',
+  '/interviews',
+  '/rejected',
+  '/analytics',
+  '/settings',
+];
 app.get(SPA_ROUTES, (req, res) => {
   res.sendFile(path.resolve(APP_ROOT, 'public', 'index.html'));
 });
@@ -125,6 +151,17 @@ app.get('/api/jobs', (req, res) => {
   }
 });
 
+app.get('/api/jobs/:id', (req, res) => {
+  try {
+    const { jobs } = getCachedDashboard();
+    const job = jobs.find(item => item.id === req.params.id);
+    if (!job) return res.status(404).json({ error: `Job not found in tracker: ${req.params.id}` });
+    res.json(buildJobReadModel(job, { bragDoc: loadBragDoc() }));
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // Full dashboard payload (jobs + profile + build timestamp)
 app.get('/api/dashboard', (req, res) => {
   try {
@@ -141,6 +178,54 @@ app.get('/api/resume-runs', (req, res) => {
 app.get('/api/brag-quality', (req, res) => {
   try {
     res.json(analyzeBragDocQuality(loadBragDoc()));
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.get('/api/workspaces/resume', (req, res) => {
+  try {
+    const { jobs } = getCachedDashboard();
+    res.json(buildResumeWorkspace(jobs, {
+      resumeRuns: [...resumeRuns.values()],
+      sourceQuality: analyzeBragDocQuality(loadBragDoc()),
+      assessJobDescription: assessStoredJobDescription,
+    }));
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.get('/api/workspaces/outreach', (req, res) => {
+  try {
+    const { jobs } = getCachedDashboard();
+    res.json(buildOutreachWorkspace(jobs));
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.get('/api/workspaces/contacts', (req, res) => {
+  try {
+    const { jobs } = getCachedDashboard();
+    res.json(buildContactsWorkspace(jobs));
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.get('/api/analytics/summary', (req, res) => {
+  try {
+    const { jobs } = getCachedDashboard();
+    res.json(buildAnalyticsSummary(jobs));
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.get('/api/settings/health', async (req, res) => {
+  try {
+    res.json(await buildSettingsHealth({ runHealthChecks }));
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -168,6 +253,25 @@ app.get('/api/analyze-gaps/:id', async (req, res) => {
   try {
     const missingSkills = await analyzeGaps(jobId);
     res.json({ missingSkills });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.get('/api/resume-gap-questions/:id', async (req, res) => {
+  try {
+    res.json({ questions: await generateGapQuestions(req.params.id) });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/resume-gap-answers/:id', express.json(), async (req, res) => {
+  try {
+    loadJobById(req.params.id);
+    const result = await applyGapAnswersToBragDoc(req.params.id, req.body?.answers || []);
+    invalidateCache();
+    res.json({ ok: true, ...result });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -243,29 +347,6 @@ app.get('/api/recruiter-analytics', (req, res) => {
   }
 });
 
-app.get('/api/ab-analytics', (req, res) => {
-  try {
-    const { jobs } = getCachedDashboard();
-    res.json(buildAbAnalytics(jobs));
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
-app.post('/api/ab-submissions/:id', express.json(), (req, res) => {
-  try {
-    loadJobById(req.params.id);
-    const submission = recordSubmission({
-      jobId: req.params.id,
-      variant: req.body.variant,
-    });
-    const { jobs } = getCachedDashboard();
-    res.json({ submission, analytics: buildAbAnalytics(jobs) });
-  } catch (err) {
-    res.status(400).json({ error: err.message });
-  }
-});
-
 // Manually evaluate a job URL through the scoring pipeline
 app.post('/api/evaluate-url', express.json(), async (req, res) => {
   const { url, company = '', title = '', fullDescription = '' } = req.body ?? {};
@@ -324,7 +405,7 @@ app.post('/api/evaluate-url', express.json(), async (req, res) => {
 // Update editable fields on a job
 app.patch('/api/jobs/:id', express.json(), (req, res) => {
   const EDITABLE = ['company','title','status','location','url','score','compensation',
-                    'employment_type','seniority','next_steps','notes','source'];
+                    'employment_type','seniority','next_steps','notes','source','flagged'];
   try {
     const fields = Object.fromEntries(
       Object.entries(req.body ?? {}).filter(([k]) => EDITABLE.includes(k))
@@ -332,7 +413,8 @@ app.patch('/api/jobs/:id', express.json(), (req, res) => {
     if (!Object.keys(fields).length) return res.status(400).json({ error: 'No editable fields provided' });
     const previous = loadJobById(req.params.id);
     if (fields.status !== undefined) fields.status = normalizeStatus(fields.status);
-    fields.date_updated = new Date().toISOString().slice(0, 10);
+    const flagOnly = Object.keys(fields).every(k => k === 'flagged');
+    if (!flagOnly) fields.date_updated = new Date().toISOString().slice(0, 10);
     const result = updateJob(req.params.id, job => {
       const next = { ...job, ...fields };
       if (fields.status && fields.status !== normalizeStatus(previous.status)) {
@@ -505,7 +587,6 @@ function saveGeneratedDoc(jobId, result) {
 app.post('/api/create-docs/:id', express.json(), async (req, res) => {
   const jobId = req.params.id;
   const injectedSkills = req.body?.injectedSkills || '';
-  const abTest = req.body?.abTest === true;
   try {
     loadJobById(jobId); // validate job exists
   } catch (err) {
@@ -514,6 +595,31 @@ app.post('/api/create-docs/:id', express.json(), async (req, res) => {
   const existingRun = resumeRuns.get(jobId);
   if (existingRun?.status === 'running') {
     return res.json({ started: true, jobId, alreadyRunning: true });
+  }
+  const runningCount = runningResumeCount();
+  if (!canStartResumeRun({ runningCount })) {
+    return res.status(429).json({
+      error: `Resume generation limit reached (${runningCount}/${resumeMaxConcurrent()})`,
+      runningCount,
+      maxConcurrent: resumeMaxConcurrent(),
+    });
+  }
+  const jdAssessment = assessStoredJobDescription(jobId);
+  if (!jdAssessment.usable) {
+    process.stdout.write(`[resume-jd-review] job=${jobId} source=${jdAssessment.source} score=${jdAssessment.score.toFixed(2)}\n`);
+    return res.status(422).json({
+      error: 'Resume generation blocked: saved job description looks incomplete or generic. Refresh the role with the full posting before drafting.',
+      needsJobDescriptionReview: true,
+      jobId,
+      jdAssessment,
+    });
+  }
+  if (!req.body?.gapReviewComplete) {
+    const questions = await generateGapQuestions(jobId);
+    process.stdout.write(`[resume-gap-review] job=${jobId} requested=true questions=${questions.length}\n`);
+    if (questions.length) return res.json({ started: false, needsGapReview: true, jobId, questions });
+  } else {
+    process.stdout.write(`[resume-gap-review] job=${jobId} requested=false reason=client_marked_complete\n`);
   }
   resumeRuns.set(jobId, {
     jobId,
@@ -526,26 +632,13 @@ app.post('/api/create-docs/:id', express.json(), async (req, res) => {
   });
   res.json({ started: true, jobId });
   const runIo = resumeIo();
+  const resources = beginSharedResumeResources();
   try {
-    if (abTest) {
-      // Pipeline: load → LM A → (LM B ‖ Claude A) → docxA → Claude B → docxB.
-      // Sharing the model load across both variants and overlapping Claude A
-      // with LM B saves ~one Claude pass (~10–15s) per A/B run.
-      const stateA = await generateResumeDraft(jobId, runIo, injectedSkills, 'technical');
-      const [stateB, resA] = await Promise.all([
-        generateResumeDraft(jobId, runIo, injectedSkills, 'outcomes'),
-        generateResumeFinish(stateA),
-      ]);
-      saveGeneratedDoc(jobId, resA);
-      const resB = await generateResumeFinish(stateB);
-      saveGeneratedDoc(jobId, resB);
-    } else {
-      saveGeneratedDoc(jobId, await generateResume(jobId, runIo, injectedSkills));
-    }
+    saveGeneratedDoc(jobId, await generateResume(jobId, runIo, injectedSkills));
   } catch (err) {
     emitResumeEvent('progress', { jobId, stage: 'error', status: 'failed', message: err.message });
   } finally {
-    cleanupResumeResourceProcesses().catch(err => {
+    await resources.release().catch(err => {
       process.stderr.write(`[resume-cleanup] ${err.message}\n`);
     });
   }

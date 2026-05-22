@@ -1,6 +1,45 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { patchDocXml, patchDocXmlSdt, xmlEscape } from '../lib/docx-utils.mjs';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+import PizZip from 'pizzip';
+import { listTemplateFields, patchDocXml, patchDocXmlSdt, removeUnusedBulletParagraphs, resolveTemplatePath, tightenDocxLayout, xmlEscape } from '../lib/docx-utils.mjs';
+
+const APP_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+
+function writeDocxFixture(filePath, {
+  documentXml = '<w:document><w:body><w:p><w:r><w:t>fixture</w:t></w:r></w:p></w:body></w:document>',
+  stylesXml = '<w:styles></w:styles>',
+} = {}) {
+  fs.mkdirSync(path.dirname(filePath), { recursive: true });
+  const zip = new PizZip();
+  zip.file('[Content_Types].xml', '<?xml version="1.0" encoding="UTF-8"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"></Types>');
+  zip.file('word/document.xml', documentXml);
+  zip.file('word/styles.xml', stylesXml);
+  fs.writeFileSync(filePath, zip.generate({ type: 'nodebuffer' }));
+}
+
+function withTemporaryProductionTemplate(fn) {
+  const templatePath = path.resolve(APP_ROOT, 'data', 'FINAL Brian Milhizer Production Resume Template v3.dotx');
+  const existed = fs.existsSync(templatePath);
+  if (!existed) {
+    writeDocxFixture(templatePath, {
+      documentXml: [
+        '<w:document><w:body>',
+        '<w:sdt><w:sdtPr><w:tag w:val="CORE_COMPETENCIES"/></w:sdtPr><w:sdtContent><w:p><w:r><w:t>Core</w:t></w:r></w:p></w:sdtContent></w:sdt>',
+        '<w:sdt><w:sdtPr><w:tag w:val="CERTIFICATIONS_LINE"/></w:sdtPr><w:sdtContent><w:p><w:r><w:t>Certs</w:t></w:r></w:p></w:sdtContent></w:sdt>',
+        '</w:body></w:document>',
+      ].join(''),
+    });
+  }
+  try {
+    return fn(templatePath);
+  } finally {
+    if (!existed) fs.rmSync(templatePath, { force: true });
+  }
+}
 
 describe('xmlEscape', () => {
   it('escapes ampersands', () => {
@@ -12,6 +51,25 @@ describe('xmlEscape', () => {
   it('handles null/undefined', () => {
     assert.equal(xmlEscape(null), '');
     assert.equal(xmlEscape(undefined), '');
+  });
+});
+
+describe('resolveTemplatePath', () => {
+  it('prefers the v3 production resume template', () => {
+    withTemporaryProductionTemplate(() => {
+      assert.equal(
+        path.basename(resolveTemplatePath()),
+        'FINAL Brian Milhizer Production Resume Template v3.dotx'
+      );
+    });
+  });
+
+  it('exposes certifications once and does not duplicate core competencies', () => {
+    withTemporaryProductionTemplate(() => {
+      const fields = listTemplateFields(resolveTemplatePath());
+      assert.equal(fields.filter(field => field === 'CORE_COMPETENCIES').length, 1);
+      assert.ok(fields.includes('CERTIFICATIONS_LINE'));
+    });
   });
 });
 
@@ -119,5 +177,35 @@ describe('patchDocXmlSdt — simple replacements', () => {
     const { docXml } = patchDocXmlSdt(xml, { REPLACE_ME: 'new' });
     assert.ok(docXml.includes('original text'));
     assert.ok(docXml.includes('<w:t>new</w:t>'));
+  });
+});
+
+describe('removeUnusedBulletParagraphs', () => {
+  it('removes bullet paragraphs with blank dynamic replacements', () => {
+    const xml = '<w:p><w:r><w:t>• </w:t></w:r><w:sdt><w:sdtPr><w:tag w:val="JOB_1_BULLET_1"/></w:sdtPr></w:sdt></w:p><w:p><w:r><w:t>Keep</w:t></w:r></w:p>';
+    const cleaned = removeUnusedBulletParagraphs(xml, { JOB_1_BULLET_1: '' });
+    assert.doesNotMatch(cleaned, /JOB_1_BULLET_1/);
+    assert.match(cleaned, /Keep/);
+  });
+});
+
+describe('tightenDocxLayout', () => {
+  it('reduces supported line and paragraph spacing without touching large title spacing', () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'career-docx-'));
+    const out = path.join(dir, 'tighten-layout.docx');
+    writeDocxFixture(out, {
+      documentXml: '<w:document><w:body><w:p><w:pPr><w:spacing w:line="240"/></w:pPr><w:r><w:t>Body</w:t></w:r></w:p></w:body></w:document>',
+      stylesXml: '<w:styles><w:style><w:pPr><w:spacing w:line="480" w:after="120"/></w:pPr></w:style></w:styles>',
+    });
+    tightenDocxLayout(out);
+    const zip = new PizZip(fs.readFileSync(out));
+    const docXml = zip.file('word/document.xml').asText();
+    const stylesXml = zip.file('word/styles.xml').asText();
+
+    assert.doesNotMatch(docXml, /w:line="240"/);
+    assert.match(docXml, /w:line="216"/);
+    assert.doesNotMatch(stylesXml, /w:after="120"/);
+    assert.match(stylesXml, /w:line="480"/);
+    fs.rmSync(dir, { recursive: true, force: true });
   });
 });

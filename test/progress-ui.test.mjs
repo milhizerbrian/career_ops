@@ -11,7 +11,8 @@ const dashboard = fs.readFileSync(path.resolve(APP_ROOT, 'public', 'js', 'dashbo
 describe('resume progress UI labels', () => {
   it('maps all current resume backend stages to friendly labels', () => {
     for (const stage of [
-      'strategy-selection',
+      'planning',
+      'draft-critique',
       'validation',
       'page-check',
       'docx',

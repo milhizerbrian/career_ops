@@ -6,8 +6,12 @@ import {
   generateAndStoreOutreachDraft,
   validateOutreachDraftPayload,
 } from '../lib/outreach-drafts.mjs';
+import fs from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 const NOW = new Date('2026-05-08T16:00:00.000Z');
+const APP_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
 function jobFixture() {
   return {
@@ -87,5 +91,14 @@ describe('outreach drafts', () => {
     assert.equal(job.contacts[0].outreachDrafts.length, 1);
     assert.deepEqual(job.contacts[0].outreachDrafts[0], draft);
     assert.equal(job.contacts[0].updatedAt, NOW.toISOString());
+  });
+
+  it('applies the shared humanizer standard to outreach prompts', () => {
+    const outreach = fs.readFileSync(path.resolve(APP_ROOT, 'lib/outreach-drafts.mjs'), 'utf8');
+    const recruiter = fs.readFileSync(path.resolve(APP_ROOT, 'lib/recruiter-targeting.mjs'), 'utf8');
+
+    assert.match(outreach, /HUMANIZED_OUTPUT_RULES/);
+    assert.match(recruiter, /HUMANIZED_OUTPUT_RULES/);
+    assert.match(recruiter, /Sound like a senior professional wrote it/);
   });
 });

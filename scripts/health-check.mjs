@@ -47,8 +47,9 @@ export function checkGmailEnv(env = process.env) {
 }
 
 export function checkPdfExportEnv(env = process.env) {
-  if (!isEnabled(env.RESUME_PDF_EXPORT)) {
-    return makeCheck('PASS', 'PDF tools', 'skipped; RESUME_PDF_EXPORT=0');
+  const pageValidationEnabled = !/^(0|false|no)$/i.test(String(env.RESUME_PAGE_VALIDATION ?? '1'));
+  if (!isEnabled(env.RESUME_PDF_EXPORT) && !pageValidationEnabled) {
+    return makeCheck('PASS', 'PDF tools', 'skipped; PDF export and page validation disabled');
   }
   return null;
 }
@@ -78,10 +79,12 @@ export async function checkPdfTools(env = process.env) {
 
   const hasSoffice = await firstAvailableCommand(sofficeCandidates(env), ['--version']);
   const hasPdfinfo = await commandExists('pdfinfo', ['-v']);
-  if (hasSoffice && hasPdfinfo) return makeCheck('PASS', 'PDF tools', 'LibreOffice and pdfinfo available');
+  const hasPdftotext = await commandExists('pdftotext', ['-v']);
+  if (hasSoffice && hasPdfinfo && hasPdftotext) return makeCheck('PASS', 'PDF tools', 'LibreOffice, pdfinfo, and pdftotext available');
   const missing = [
     hasSoffice ? null : 'LibreOffice/soffice',
     hasPdfinfo ? null : 'pdfinfo',
+    hasPdftotext ? null : 'pdftotext',
   ].filter(Boolean).join(', ');
   return makeCheck('FAIL', 'PDF tools', `missing ${missing}`);
 }
@@ -104,6 +107,14 @@ export async function fetchLmStudioModels(fetchImpl = fetch, timeoutMs = 2500) {
 }
 
 export async function checkLmStudio(fetchImpl = fetch, env = process.env) {
+  const claudeFirstSynthesis = (env.PREFER_CLAUDE_SYNTHESIS ?? '1') !== '0';
+  const claudeFirstEvaluation = (env.PREFER_CLAUDE_EVALUATION ?? env.PREFER_CLAUDE_SYNTHESIS ?? '1') !== '0';
+  if (claudeFirstSynthesis && claudeFirstEvaluation) {
+    return [
+      makeCheck('PASS', 'LM Studio reachable', 'skipped; Claude-first pipeline enabled'),
+      makeCheck('PASS', 'Configured LM model', `${getLmStudioAnalysisModel(env)}; rollback config only`),
+    ];
+  }
   const configuredModel = getLmStudioAnalysisModel(env);
   try {
     const models = await fetchLmStudioModels(fetchImpl);
@@ -142,6 +153,17 @@ export function checkResumeTemplate() {
   } catch (err) {
     return makeCheck('FAIL', 'Resume template', err.message);
   }
+}
+
+export function checkResumeTruthSources(dataDir = path.resolve(APP_ROOT, 'data')) {
+  const required = [
+    'master-brag-document.md',
+    'Profile.pdf',
+    'FINAL Brian Milhizer Production Resume Template v3.dotx',
+  ];
+  const missing = required.filter(file => !fs.existsSync(path.resolve(dataDir, file)));
+  if (missing.length) return makeCheck('FAIL', 'Resume truth files', `missing ${missing.join(', ')}`);
+  return makeCheck('PASS', 'Resume truth files', required.join(', '));
 }
 
 export function checkTrackerJson(trackerPath = path.resolve(APP_ROOT, 'data', 'tracker.json')) {
@@ -185,6 +207,7 @@ export async function runHealthChecks({ env = process.env, fetchImpl = fetch } =
   const profilePath = env.CAREER_OPS_CONFIG_DIR
     ? path.resolve(env.CAREER_OPS_CONFIG_DIR, 'profile.yml')
     : undefined;
+  const dataDir = env.CAREER_OPS_DATA_DIR ? path.resolve(env.CAREER_OPS_DATA_DIR) : path.resolve(APP_ROOT, 'data');
   const checks = [
     checkNodeVersion(),
     ...lmChecks,
@@ -193,13 +216,14 @@ export async function runHealthChecks({ env = process.env, fetchImpl = fetch } =
     await checkPdfTools(env),
     checkPlaywrightChromium(),
     checkResumeTemplate(),
+    checkResumeTruthSources(dataDir),
     checkTrackerJson(trackerPath),
     checkProfileYaml(profilePath),
     checkOutputWritable(),
   ];
   if (isEnabled(env.CAREER_OPS_HEALTH_NON_SECRET)) {
     return checks.map(check => (
-      check.status === 'FAIL' && ['Playwright Chromium', 'Resume template', 'Profile YAML'].includes(check.name)
+      check.status === 'FAIL' && ['Playwright Chromium', 'Resume template', 'Resume truth files', 'Profile YAML'].includes(check.name)
         ? { ...check, status: 'WARN', message: `${check.message}; skipped in non-secret CI mode` }
         : check
     ));

@@ -11,7 +11,7 @@ describe('buildGeneratedDocEntry', () => {
 
     assert.deepEqual(
       buildGeneratedDocEntry({
-        variant: 'technical',
+        variant: 'default',
         docxUrl: '/output/resume-example.docx',
         pdfUrl: null,
         pageCount: null,
@@ -22,8 +22,8 @@ describe('buildGeneratedDocEntry', () => {
       }),
       {
         generatedAt: '2026-05-07T12:00:00.000Z',
-        strategy: 'technical',
-        variant: 'technical',
+        strategy: 'default',
+        variant: 'default',
         evaluatorScore: 4.2,
         atsScore: 83,
         sourceJobId: 'job-1',
@@ -34,8 +34,8 @@ describe('buildGeneratedDocEntry', () => {
         pageValidation,
         history: [{
           generatedAt: '2026-05-07T12:00:00.000Z',
-          strategy: 'technical',
-          variant: 'technical',
+          strategy: 'default',
+          variant: 'default',
           evaluatorScore: 4.2,
           atsScore: 83,
           sourceJobId: 'job-1',
@@ -88,21 +88,21 @@ describe('buildResumeVersionRecord', () => {
   it('captures source job, strategy, score, file name, and docx URL', () => {
     assert.deepEqual(
       buildResumeVersionRecord({
-        variant: 'outcomes',
-        docxUrl: '/output/resume-acme-2026-05-08-outcomes.docx',
+        variant: 'default',
+        docxUrl: '/output/resume-acme-2026-05-08-default.docx',
       }, {
         generatedAt: '2026-05-08T13:00:00.000Z',
         job: { id: 'job-2', score: 3.8, _ats: { score: 76 } },
       }),
       {
         generatedAt: '2026-05-08T13:00:00.000Z',
-        strategy: 'outcomes',
-        variant: 'outcomes',
+        strategy: 'default',
+        variant: 'default',
         evaluatorScore: 3.8,
         atsScore: 76,
         sourceJobId: 'job-2',
-        fileName: 'resume-acme-2026-05-08-outcomes.docx',
-        docxUrl: '/output/resume-acme-2026-05-08-outcomes.docx',
+        fileName: 'resume-acme-2026-05-08-default.docx',
+        docxUrl: '/output/resume-acme-2026-05-08-default.docx',
       }
     );
   });

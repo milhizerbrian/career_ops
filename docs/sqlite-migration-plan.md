@@ -133,7 +133,7 @@ Suggested columns:
 - `created_at text`
 - `updated_at text`
 
-This table should be populated conservatively at first from existing tracker fields and A/B submissions. Do not infer application dates when the source data is missing.
+This table should be populated conservatively at first from existing tracker fields. Do not infer application dates when the source data is missing.
 
 ### `scan_history`
 
@@ -152,36 +152,12 @@ Suggested columns:
 
 Keep `raw_line` so TSV export can preserve unrecognized columns during migration.
 
-### `ab_analytics`
-
-Submission-level A/B data currently stored in `data/ab-analytics.json`.
-
-Suggested columns:
-- `id integer primary key autoincrement`
-- `job_id text not null references jobs(id) on delete cascade`
-- `variant text not null`
-- `submitted_at text not null`
-- `raw_json text`
-- `unique(job_id, variant)`
-
-Alternative: use `analytics_versions` if analytics expands beyond resume variants.
-
-Suggested `analytics_versions` columns:
-- `id integer primary key autoincrement`
-- `kind text not null`
-- `version_key text not null`
-- `label text`
-- `metadata_json text`
-- `created_at text`
-- `unique(kind, version_key)`
-
 ## Migration Path From `tracker.json`
 
 1. Snapshot current files:
    - `data/tracker.json`
    - `data/gmail-jobs.json`
    - `data/scan-history.tsv`
-   - `data/ab-analytics.json`
 2. Validate JSON with the existing tracker validator and normalize statuses using `normalizeStatus`.
 3. Create SQLite schema in a local database such as `data/career-ops.sqlite`.
 4. Import each tracker entry into `jobs`.
@@ -190,8 +166,7 @@ Suggested `analytics_versions` columns:
 7. Import `job.recruiterTargeting` into `recruiter_contacts`, preserving contact attempts.
 8. Import Gmail-derived fields from tracker entries into `gmail_events`; import broad discoveries from `data/gmail-jobs.json` as unmatched events.
 9. Import `data/scan-history.tsv` into `scan_history`.
-10. Import `data/ab-analytics.json.submissions` into `ab_analytics`.
-11. Run parity checks before any runtime path reads from SQLite.
+10. Run parity checks before any runtime path reads from SQLite.
 
 ## Rollback And JSON Export
 
@@ -220,7 +195,6 @@ During early rollout, keep automatic periodic JSON exports enabled so rollback i
 - Gmail parity: matched Gmail fields on jobs survive export.
 - Recruiter parity: `responseStatus`, suggested message, contacts, and contact attempts survive export.
 - Scan dedupe parity: every TSV URL appears once in `scan_history`.
-- A/B parity: submission counts by variant match existing analytics.
 - Round-trip parity: `tracker.json -> SQLite -> tracker.json` should produce semantically equivalent JSON after normalization.
 
 ## Phased Rollout
