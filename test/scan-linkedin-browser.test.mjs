@@ -80,6 +80,24 @@ describe('scrapePageIds', () => {
     const ids = scrapePageIds(html);
     assert.deepEqual(ids, ['9999999999']);
   });
+
+  it('extracts IDs from /jobs/view/ hrefs (jobs-tracker fallback)', () => {
+    const html = `
+      <a href="/jobs/view/1112223334">Job A</a>
+      <a href="https://www.linkedin.com/jobs/view/5556667778">Job B</a>`;
+    const ids = scrapePageIds(html);
+    assert.deepEqual(ids.sort(), ['1112223334', '5556667778'].sort());
+  });
+
+  it('deduplicates IDs found via multiple methods', () => {
+    const html = `
+      <li data-entity-urn="urn:li:jobPosting:1234567890">
+        <a href="/jobs/view/1234567890">Same job</a>
+      </li>`;
+    const ids = scrapePageIds(html);
+    assert.equal(ids.length, 1);
+    assert.equal(ids[0], '1234567890');
+  });
 });
 
 describe('paginationUrls', () => {

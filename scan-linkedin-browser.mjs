@@ -53,6 +53,12 @@ export function scrapePageIds(html) {
     const id = $(el).attr('data-job-id');
     if (id && /^\d+$/.test(id)) ids.add(id);
   });
+  // Fallback: extract IDs from /jobs/view/JOBID hrefs (used by jobs-tracker and collection pages)
+  $('a[href]').each((_, el) => {
+    const href = $(el).attr('href') || '';
+    const m = href.match(/\/jobs\/view\/(\d+)/);
+    if (m) ids.add(m[1]);
+  });
   return [...ids];
 }
 
