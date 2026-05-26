@@ -5,9 +5,12 @@ import {
   isAuthWall,
   buildSavedJobsUrl,
   buildRecommendedUrl,
+  buildUnicornUrl,
   scrapePageIds,
   paginationUrls,
   isCookieStale,
+  parseListedAt,
+  isWithinDays,
 } from '../scan-linkedin-browser.mjs';
 
 describe('isAuthWall', () => {
@@ -37,6 +40,12 @@ describe('buildSavedJobsUrl', () => {
 describe('buildRecommendedUrl', () => {
   it('returns the LinkedIn recommended jobs collection URL', () => {
     assert.equal(buildRecommendedUrl(), 'https://www.linkedin.com/jobs/collections/recommended/');
+  });
+});
+
+describe('buildUnicornUrl', () => {
+  it('returns the LinkedIn unicorn companies jobs collection URL', () => {
+    assert.equal(buildUnicornUrl(), 'https://www.linkedin.com/jobs/collections/unicorn-companies/');
   });
 });
 
@@ -157,5 +166,46 @@ describe('isCookieStale', () => {
 
   it('returns true for undefined savedAt', () => {
     assert.equal(isCookieStale(undefined, 30), true);
+  });
+});
+
+describe('parseListedAt', () => {
+  it('extracts listedAt timestamp from JSON embedded in HTML', () => {
+    const html = '<code>{"listedAt": 1716768000000, "title": "CSM"}</code>';
+    assert.equal(parseListedAt(html), 1716768000000);
+  });
+
+  it('handles whitespace around colon', () => {
+    const html = '{"listedAt" : 1716768000000}';
+    assert.equal(parseListedAt(html), 1716768000000);
+  });
+
+  it('returns null when listedAt is absent', () => {
+    const html = '<div>No job data</div>';
+    assert.equal(parseListedAt(html), null);
+  });
+});
+
+describe('isWithinDays', () => {
+  it('returns true for a job posted today', () => {
+    assert.equal(isWithinDays(Date.now(), 7), true);
+  });
+
+  it('returns true for a job posted 6 days ago', () => {
+    const recent = Date.now() - 6 * 24 * 60 * 60 * 1000;
+    assert.equal(isWithinDays(recent, 7), true);
+  });
+
+  it('returns false for a job posted 8 days ago', () => {
+    const old = Date.now() - 8 * 24 * 60 * 60 * 1000;
+    assert.equal(isWithinDays(old, 7), false);
+  });
+
+  it('returns true for null (date unknown — do not filter)', () => {
+    assert.equal(isWithinDays(null, 7), true);
+  });
+
+  it('returns true for undefined (date unknown — do not filter)', () => {
+    assert.equal(isWithinDays(undefined, 7), true);
   });
 });

@@ -41,6 +41,10 @@ export function buildRecommendedUrl() {
   return `${LI_BASE}/jobs/collections/recommended/`;
 }
 
+export function buildUnicornUrl() {
+  return `${LI_BASE}/jobs/collections/unicorn-companies/`;
+}
+
 export function scrapePageIds(html) {
   const $ = cheerioLoad(html);
   const ids = new Set();
@@ -80,6 +84,19 @@ export function isCookieStale(savedAt, thresholdDays = 30) {
   if (!savedAt) return true;
   const ms = Date.now() - new Date(savedAt).getTime();
   return ms > thresholdDays * 24 * 60 * 60 * 1000;
+}
+
+// listedAt is a Unix timestamp in ms embedded in LinkedIn's guest API response JSON
+export function parseListedAt(html) {
+  const m = html.match(/"listedAt"\s*:\s*(\d+)/);
+  return m ? parseInt(m[1], 10) : null;
+}
+
+// Returns true if listedAt is within `days` days of now.
+// Returns true for null/undefined — don't filter when date is unavailable.
+export function isWithinDays(listedAt, days) {
+  if (listedAt == null) return true;
+  return Date.now() - listedAt <= days * 24 * 60 * 60 * 1000;
 }
 
 // ── Cookie loading ────────────────────────────────────────────────────
@@ -439,6 +456,31 @@ async function harvestRecommendedIds(page, pages) {
   }
 }
 
+async function harvestUnicornIds(page, pages) {
+  const url = buildUnicornUrl();
+  process.stdout.write('\nFetching unicorn company jobs…\n');
+  try {
+    await page.goto(url, { timeout: 45_000 });
+    await sleep(2000); // initial render before scrolling
+    const scrollRounds = pages * 3;
+    for (let i = 0; i < scrollRounds; i++) {
+      await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
+      await sleep(1500);
+    }
+    const html = await page.content();
+    const ids  = scrapePageIds(html);
+    if (ids.length === 0) {
+      process.stdout.write('  [warn] 0 unicorn job IDs found — selectors may have changed\n');
+    } else {
+      process.stdout.write(`  ${ids.length} unicorn job IDs found\n`);
+    }
+    return new Set(ids);
+  } catch (err) {
+    process.stdout.write(`  [error] unicorn jobs page failed: ${err.message} — skipping\n`);
+    return new Set();
+  }
+}
+
 // ── Main ─────────────────────────────────────────────────────────────
 
 async function main() {
@@ -447,10 +489,12 @@ async function main() {
   const noSaved       = args.includes('--no-saved');
   const savedOnly     = args.includes('--saved-only');
   const noRecommended = args.includes('--no-recommended');
+  const noUnicorn     = args.includes('--no-unicorn');
   const limitIdx      = args.indexOf('--limit');
   const maxDetail     = limitIdx >= 0 ? (parseInt(args[limitIdx + 1]) || 25) : 25;
   const pagesIdx      = args.indexOf('--pages');
   const pages         = pagesIdx  >= 0 ? (parseInt(args[pagesIdx  + 1]) || 3)  : 3;
+  const UNICORN_DAYS  = 7; // only ingest unicorn jobs posted within this many days
 
   // ── Pre-flight ──────────────────────────────────────────────────────
   loadCookie(); // exits with message if missing
@@ -482,6 +526,7 @@ async function main() {
   let searchIds      = new Set();
   let savedIds       = new Set();
   let recommendedIds = new Set();
+  let unicornIds     = new Set();
 
   await withBrowser(async context => {
     const page = await context.newPage();
@@ -501,6 +546,9 @@ async function main() {
       if (!noRecommended) {
         recommendedIds = await harvestRecommendedIds(page, pages);
       }
+      if (!noUnicorn) {
+        unicornIds = await harvestUnicornIds(page, pages);
+      }
     }
     if (!noSaved) {
       savedIds = await harvestSavedIds(page);
@@ -508,7 +556,7 @@ async function main() {
   });
 
   // ── Phase 2: Dedup + log already-tracked saved jobs ─────────────────
-  const allIds = new Set([...searchIds, ...savedIds, ...recommendedIds]);
+  const allIds = new Set([...searchIds, ...savedIds, ...recommendedIds, ...unicornIds]);
   const newIds = [...allIds].filter(id => !seenIds.has(id));
 
   for (const id of savedIds) {
@@ -535,10 +583,23 @@ async function main() {
 
     await randomDelay();
 
-    const source = savedIds.has(id) ? 'linkedin-saved' : 'linkedin-browser';
+    const source = unicornIds.has(id) ? 'linkedin-unicorn'
+                 : savedIds.has(id)   ? 'linkedin-saved'
+                 : 'linkedin-browser';
 
     try {
       const html = await fetchText(liDetail(id));
+
+      // Unicorn collection: skip jobs posted more than UNICORN_DAYS ago
+      if (unicornIds.has(id)) {
+        const listedAt = parseListedAt(html);
+        if (!isWithinDays(listedAt, UNICORN_DAYS)) {
+          const age = listedAt ? Math.floor((Date.now() - listedAt) / 86400000) : '?';
+          process.stdout.write(`  ~ [unicorn] ${id} — ${age}d old, skipping\n`);
+          continue;
+        }
+      }
+
       const job  = parseDetail(html, id);
       job.source = source;
       job.url    = liView(id); // ensure correct URL regardless of what parseDetail sets
@@ -582,7 +643,7 @@ async function main() {
   process.stdout.write(`\n${bar}\n`);
   process.stdout.write(`LinkedIn Browser Scan — ${date}\n`);
   process.stdout.write(`${bar}\n`);
-  process.stdout.write(`IDs harvested:   ${allIds.size} (${searchIds.size} search, ${recommendedIds.size} recommended, ${savedIds.size} saved)\n`);
+  process.stdout.write(`IDs harvested:   ${allIds.size} (${searchIds.size} search, ${recommendedIds.size} recommended, ${unicornIds.size} unicorn, ${savedIds.size} saved)\n`);
   process.stdout.write(`New jobs added:  ${newJobs.length}\n`);
   process.stdout.write(`Errors:          ${errors.length}\n`);
   if (errors.length) {
