@@ -4,6 +4,7 @@ import { describe, it } from 'node:test';
 import {
   isAuthWall,
   buildSavedJobsUrl,
+  buildRecommendedUrl,
   scrapePageIds,
   paginationUrls,
   isCookieStale,
@@ -28,8 +29,14 @@ describe('isAuthWall', () => {
 });
 
 describe('buildSavedJobsUrl', () => {
-  it('returns the LinkedIn saved-jobs URL', () => {
-    assert.equal(buildSavedJobsUrl(), 'https://www.linkedin.com/my-items/saved-jobs/');
+  it('returns the LinkedIn jobs-tracker URL', () => {
+    assert.equal(buildSavedJobsUrl(), 'https://www.linkedin.com/jobs-tracker/');
+  });
+});
+
+describe('buildRecommendedUrl', () => {
+  it('returns the LinkedIn recommended jobs collection URL', () => {
+    assert.equal(buildRecommendedUrl(), 'https://www.linkedin.com/jobs/collections/recommended/');
   });
 });
 

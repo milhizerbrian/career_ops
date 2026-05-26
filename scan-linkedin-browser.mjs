@@ -34,7 +34,11 @@ export function isAuthWall(url) {
 }
 
 export function buildSavedJobsUrl() {
-  return `${LI_BASE}/my-items/saved-jobs/`;
+  return `${LI_BASE}/jobs-tracker/`;
+}
+
+export function buildRecommendedUrl() {
+  return `${LI_BASE}/jobs/collections/recommended/`;
 }
 
 export function scrapePageIds(html) {
@@ -403,17 +407,44 @@ async function harvestSavedIds(page) {
   }
 }
 
+async function harvestRecommendedIds(page, pages) {
+  const url = buildRecommendedUrl();
+  process.stdout.write('\nFetching recommended jobs…\n');
+  try {
+    await page.goto(url, { timeout: 45_000 });
+    await sleep(2000); // initial render before scrolling
+    // Each "page" is ~25 items; 3 scrolls per page is enough to trigger lazy loading
+    const scrollRounds = pages * 3;
+    for (let i = 0; i < scrollRounds; i++) {
+      await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
+      await sleep(1500);
+    }
+    const html = await page.content();
+    const ids  = scrapePageIds(html);
+    if (ids.length === 0) {
+      process.stdout.write('  [warn] 0 recommended job IDs found — selectors may have changed\n');
+    } else {
+      process.stdout.write(`  ${ids.length} recommended job IDs found\n`);
+    }
+    return new Set(ids);
+  } catch (err) {
+    process.stdout.write(`  [error] recommended jobs page failed: ${err.message} — skipping\n`);
+    return new Set();
+  }
+}
+
 // ── Main ─────────────────────────────────────────────────────────────
 
 async function main() {
-  const args      = process.argv.slice(2);
-  const dryRun    = args.includes('--dry-run');
-  const noSaved   = args.includes('--no-saved');
-  const savedOnly = args.includes('--saved-only');
-  const limitIdx  = args.indexOf('--limit');
-  const maxDetail = limitIdx >= 0 ? (parseInt(args[limitIdx + 1]) || 25) : 25;
-  const pagesIdx  = args.indexOf('--pages');
-  const pages     = pagesIdx  >= 0 ? (parseInt(args[pagesIdx  + 1]) || 3)  : 3;
+  const args          = process.argv.slice(2);
+  const dryRun        = args.includes('--dry-run');
+  const noSaved       = args.includes('--no-saved');
+  const savedOnly     = args.includes('--saved-only');
+  const noRecommended = args.includes('--no-recommended');
+  const limitIdx      = args.indexOf('--limit');
+  const maxDetail     = limitIdx >= 0 ? (parseInt(args[limitIdx + 1]) || 25) : 25;
+  const pagesIdx      = args.indexOf('--pages');
+  const pages         = pagesIdx  >= 0 ? (parseInt(args[pagesIdx  + 1]) || 3)  : 3;
 
   // ── Pre-flight ──────────────────────────────────────────────────────
   loadCookie(); // exits with message if missing
@@ -442,8 +473,9 @@ async function main() {
   const trackerJobs  = Object.values(tracker);
 
   // ── Phase 1: ID harvest ─────────────────────────────────────────────
-  let searchIds = new Set();
-  let savedIds  = new Set();
+  let searchIds      = new Set();
+  let savedIds       = new Set();
+  let recommendedIds = new Set();
 
   await withBrowser(async context => {
     const page = await context.newPage();
@@ -460,6 +492,9 @@ async function main() {
 
     if (!savedOnly) {
       searchIds = await harvestSearchIds(page, searches, pages);
+      if (!noRecommended) {
+        recommendedIds = await harvestRecommendedIds(page, pages);
+      }
     }
     if (!noSaved) {
       savedIds = await harvestSavedIds(page);
@@ -467,7 +502,7 @@ async function main() {
   });
 
   // ── Phase 2: Dedup + log already-tracked saved jobs ─────────────────
-  const allIds = new Set([...searchIds, ...savedIds]);
+  const allIds = new Set([...searchIds, ...savedIds, ...recommendedIds]);
   const newIds = [...allIds].filter(id => !seenIds.has(id));
 
   for (const id of savedIds) {
@@ -541,7 +576,7 @@ async function main() {
   process.stdout.write(`\n${bar}\n`);
   process.stdout.write(`LinkedIn Browser Scan — ${date}\n`);
   process.stdout.write(`${bar}\n`);
-  process.stdout.write(`IDs harvested:   ${allIds.size} (${searchIds.size} search, ${savedIds.size} saved)\n`);
+  process.stdout.write(`IDs harvested:   ${allIds.size} (${searchIds.size} search, ${recommendedIds.size} recommended, ${savedIds.size} saved)\n`);
   process.stdout.write(`New jobs added:  ${newJobs.length}\n`);
   process.stdout.write(`Errors:          ${errors.length}\n`);
   if (errors.length) {
