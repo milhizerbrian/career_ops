@@ -1007,7 +1007,8 @@ function applyOppFilters() {
         </div>
       </td>
       <td class="px-4 py-3 hidden md:table-cell text-left">
-        <span class="font-bold ${atsColor}">${atsStr}</span>
+        ${renderScoreDetails('ATS score', atsStr, job._scoreExplanations?.ats || fallbackScoreExplanation(job, 'ats'), 'inline', atsColor)}
+        ${renderScoreDetails('Priority', job._search?.score == null ? '—' : `${job._search.score}%`, job._scoreExplanations?.search || job._search || fallbackScoreExplanation(job, 'search'), 'inline', 'text-slate-700')}
       </td>
       <td class="px-4 py-3">${statusBadge(job.status)}</td>
       <td class="px-4 py-3 text-xs text-slate-500 hidden lg:table-cell">${esc(job.location||'—')}</td>
@@ -1129,6 +1130,10 @@ function buildDetailPanel(job) {
         ${staleText ? `<span class="text-xs font-semibold text-amber-700 bg-amber-50 rounded px-2 py-1">${esc(staleText)}</span>` : ''}
       </div>`);
   }
+
+  parts.push(renderScoreExplanationPanel(job));
+  parts.push(renderWhyThisRoleBrief(job));
+  parts.push(renderCompanyResearchPanel(job));
 
   // Score analysis / email snippet
   const analysis = job.score_analysis || job.last_email_snippet || job.notes || '';
@@ -1384,6 +1389,156 @@ function resumeVersionScoreLabel(version) {
   if (version.evaluatorScore != null) bits.push(`Eval ${version.evaluatorScore}`);
   if (version.atsScore != null) bits.push(`ATS ${Math.round(version.atsScore)}%`);
   return bits.join(' · ') || 'Score —';
+}
+
+function scoreExplanationLines(model = {}) {
+  const explanation = Array.isArray(model.explanation)
+    ? model.explanation
+    : Array.isArray(model.reasons)
+      ? model.reasons
+      : [];
+  const missing = Array.isArray(model.missingSignals) ? model.missingSignals : [];
+  const action = model.action || model.confidenceAction || '';
+  return [
+    ...explanation,
+    ...missing.map(signal => `Missing: ${signal}`),
+    action ? `Action: ${action}` : '',
+  ].filter(Boolean);
+}
+
+function renderScoreDetails(label, value, model = {}, mode = 'block', color = 'text-slate-800') {
+  const lines = scoreExplanationLines(model);
+  const inline = mode === 'inline';
+  if (!lines.length) return `<span class="font-bold ${color}">${esc(value)}</span>`;
+  return `<details class="score-explanation ${inline ? 'mt-1' : 'border border-slate-100 rounded-lg px-3 py-2'}">
+    <summary class="${inline ? 'inline-flex' : 'flex'} cursor-pointer items-center gap-1 text-xs font-semibold ${color}">
+      <span>${esc(label)}: ${esc(value)}</span>
+      <span class="material-symbols-outlined text-sm">expand_more</span>
+    </summary>
+    <ul class="mt-2 space-y-1 text-[11px] text-slate-500 leading-relaxed">
+      ${lines.slice(0, 6).map(line => `<li>${esc(line)}</li>`).join('')}
+    </ul>
+  </details>`;
+}
+
+function fallbackScoreExplanation(job, kind) {
+  if (kind === 'ats') {
+    const score = atsPercent(job);
+    return {
+      explanation: [
+        score == null ? 'No ATS score is available yet.' : `ATS score is ${Math.round(score)}%.`,
+        hasGeneratedResume(job) ? 'A generated resume exists for this role.' : 'No generated resume is saved yet.',
+      ],
+      missingSignals: score == null ? ['evaluated resume score'] : hasGeneratedResume(job) ? [] : ['role-specific resume version'],
+      action: score == null || score < 75 ? 'Generate or revise the resume before applying.' : 'Use this role as an application priority.',
+    };
+  }
+  if (kind === 'oi') {
+    const oi = job._oi || {};
+    return {
+      explanation: oi.reasons || [`Opportunity intelligence score is ${oi.score ?? 'unknown'}.`],
+      missingSignals: oi.missingSignals || ['company research enrichment'],
+      action: 'Enrich company signals to improve confidence.',
+    };
+  }
+  return {
+    explanation: [
+      `Next action is ${nextActionLabel(job._workflow?.nextBestAction || 'review')}.`,
+      hasGeneratedResume(job) ? 'Resume readiness signal is present.' : 'Resume readiness signal is missing.',
+    ],
+    missingSignals: [job._search ? '' : 'combined search priority score'].filter(Boolean),
+    action: compactNextStep(job) || 'Review this role against current priorities.',
+  };
+}
+
+function renderScoreExplanationPanel(job) {
+  const explanations = job._scoreExplanations || {};
+  const items = [
+    ['ATS', atsScoreLabel(job), explanations.ats || fallbackScoreExplanation(job, 'ats'), atsScoreColor(job)],
+    ['OI', job._oi?.score == null ? '—' : `${job._oi.score}%`, explanations.oi || job._oi || fallbackScoreExplanation(job, 'oi'), 'text-slate-800'],
+    ['Search Priority', job._search?.score == null ? '—' : `${job._search.score}%`, explanations.search || job._search || fallbackScoreExplanation(job, 'search'), 'text-slate-800'],
+  ];
+  return `<div class="mt-3 mb-3 bg-white border border-slate-200 rounded-lg p-3">
+    <p class="text-[10px] font-bold uppercase tracking-wide text-slate-400 mb-2">Score Explanations</p>
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-2">${items.map(([label, value, model, color]) => renderScoreDetails(label, value, model, 'block', color)).join('')}</div>
+  </div>`;
+}
+
+function renderWhyThisRoleBrief(job) {
+  const brief = job._brief || fallbackWhyThisRoleBrief(job);
+  if (!brief) return '';
+  const section = (label, values) => {
+    const list = Array.isArray(values) ? values.filter(Boolean) : [values].filter(Boolean);
+    if (!list.length) return '';
+    return `<div><p class="text-[10px] font-bold uppercase tracking-wide text-slate-400 mb-1">${esc(label)}</p>
+      <ul class="space-y-1 text-xs text-slate-600">${list.slice(0, 4).map(item => `<li>${esc(item)}</li>`).join('')}</ul></div>`;
+  };
+  return `<div class="mt-3 mb-3 bg-white border border-slate-200 rounded-lg p-3">
+    <p class="text-[10px] font-bold uppercase tracking-wide text-slate-400 mb-2">Why This Role</p>
+    <p class="text-xs text-slate-700 leading-relaxed mb-3">${esc(brief.fitThesis || '')}</p>
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+      ${section('Likely Objections', brief.likelyObjections)}
+      ${section('Strongest Stories', brief.strongestStories)}
+      ${section('Gaps', brief.gaps)}
+      ${section('Questions To Ask', brief.questionsToAsk)}
+    </div>
+    ${brief.outreachAngle ? `<p class="text-xs font-semibold text-blue-700 bg-blue-50 rounded px-2 py-1 mt-3">${esc(brief.outreachAngle)}</p>` : ''}
+  </div>`;
+}
+
+function fallbackWhyThisRoleBrief(job) {
+  const gaps = Array.isArray(job.report?.gaps) ? job.report.gaps.slice(0, 4) : [];
+  const stories = Array.isArray(job.report?.cv_match_table)
+    ? job.report.cv_match_table.filter(row => /strong/i.test(row?.strength || '') && row.evidence).slice(0, 3).map(row => row.evidence)
+    : [];
+  return {
+    fitThesis: job.report?.role_summary || job.score_analysis || `${job.company || 'This company'} is being tracked for ${job.title || 'this role'}.`,
+    likelyObjections: gaps.length ? gaps : ['Confirm the highest-impact requirements before interview prep.'],
+    strongestStories: stories,
+    gaps,
+    questionsToAsk: ['What would make the first 90 days successful?', 'Which customer or product priority matters most for this role?'],
+    outreachAngle: compactNextStep(job) || 'Use the strongest matching story as the outreach hook.',
+  };
+}
+
+function renderCompanyResearchPanel(job) {
+  const research = job._companyResearch || fallbackCompanyResearch(job);
+  if (!research) return '';
+  const chips = [
+    ['Funding', research.funding],
+    ['Layoffs', research.layoffs],
+    ['Leadership', research.leadership],
+    ['Category', research.productCategory],
+    ['Customers', Array.isArray(research.customers) ? research.customers.join(', ') : research.customers],
+    ['Competitors', Array.isArray(research.competitors) ? research.competitors.join(', ') : research.competitors],
+    ['News', Array.isArray(research.recentNews) ? research.recentNews.join(', ') : research.recentNews],
+  ].filter(([, value]) => value);
+  if (!chips.length && !research.missingSignals?.length) return '';
+  return `<div class="mt-3 mb-3 bg-white border border-slate-200 rounded-lg p-3">
+    <div class="flex items-center justify-between gap-2 mb-2">
+      <p class="text-[10px] font-bold uppercase tracking-wide text-slate-400">Company Research</p>
+      <span class="text-[10px] font-bold uppercase rounded px-2 py-0.5 bg-slate-100 text-slate-600">${esc(research.confidence ?? 0)}% confidence</span>
+    </div>
+    <div class="flex flex-wrap gap-1.5">
+      ${chips.map(([label, value]) => `<span class="text-[11px] bg-slate-50 text-slate-600 border border-slate-100 rounded px-2 py-1"><strong>${esc(label)}:</strong> ${esc(value)}</span>`).join('')}
+    </div>
+    ${research.missingSignals?.length ? `<p class="text-[11px] text-slate-400 mt-2">Missing: ${esc(research.missingSignals.join(', '))}</p>` : ''}
+  </div>`;
+}
+
+function fallbackCompanyResearch(job) {
+  const oi = job._oi || {};
+  return {
+    confidence: oi.score ?? 0,
+    funding: '',
+    layoffs: '',
+    leadership: '',
+    productCategory: job.full_description || job.description_preview ? 'Inferred from job description' : '',
+    customers: [],
+    competitors: [],
+    recentNews: [],
+    missingSignals: oi.missingSignals || ['funding', 'layoffs', 'leadership', 'customers', 'competitors', 'recent news'],
+  };
 }
 
 // ─── Interview detail panel ──────────────────────────────────────────────────
@@ -1860,6 +2015,9 @@ function setupDelegatedWorkspaceActions() {
     else invalidateWorkspaceCaches();
     renderOutreachWorkspace();
   });
+
+  const analyticsRoot = document.getElementById('view-analytics');
+  delegate(analyticsRoot, 'click', '.job-open-btn', (event, btn) => showJobDetail(btn.dataset.id));
 }
 
 function renderWorkspaceView(viewName) {
@@ -1968,9 +2126,10 @@ function renderJobDetailWorkspace(job) {
             </div>
             ${statusBadge(job.status)}
           </div>
-          <div class="grid grid-cols-4 gap-2 mb-4">
-            ${workspaceMetricCard('ATS', atsScoreLabel(job), atsScoreColor(job))}
-            ${workspaceMetricCard('OI', job._oi?.score ?? '—', 'text-slate-800')}
+          <div class="grid grid-cols-2 md:grid-cols-5 gap-2 mb-4">
+            ${workspaceMetricCard('ATS', atsScoreLabel(job), atsScoreColor(job), job._scoreExplanations?.ats || fallbackScoreExplanation(job, 'ats'))}
+            ${workspaceMetricCard('OI', job._oi?.score ?? '—', 'text-slate-800', job._scoreExplanations?.oi || job._oi || fallbackScoreExplanation(job, 'oi'))}
+            ${workspaceMetricCard('Priority', job._search?.score == null ? '—' : `${job._search.score}%`, 'text-slate-800', job._scoreExplanations?.search || job._search || fallbackScoreExplanation(job, 'search'))}
             ${workspaceMetricCard('Resumes', versions.length, 'text-slate-800')}
             ${workspaceMetricCard('Contacts', (job.contacts || []).length, 'text-slate-800')}
           </div>
@@ -2287,6 +2446,19 @@ function contactExperienceMatchClass(contact) {
   return 'text-rose-600 font-semibold';
 }
 
+function contactInfluenceLabel(contact) {
+  const score = Number(contact?.influenceScore ?? contact?.contactIntelligence?.score);
+  return Number.isFinite(score) ? `${Math.round(score)}%` : '—';
+}
+
+function contactInfluenceClass(contact) {
+  const score = Number(contact?.influenceScore ?? contact?.contactIntelligence?.score);
+  if (!Number.isFinite(score)) return 'text-slate-400';
+  if (score >= 75) return 'text-emerald-700 font-semibold';
+  if (score >= 50) return 'text-amber-700 font-semibold';
+  return 'text-slate-600';
+}
+
 function setContactsSort(col) {
   contactsSort = {
     col,
@@ -2307,6 +2479,10 @@ function contactSortButton(col, label) {
 function contactSortValue(contact, col) {
   if (col === 'experienceMatchPct') {
     const pct = Number(contact.experienceMatchPct);
+    return Number.isFinite(pct) ? pct : -1;
+  }
+  if (col === 'influenceScore') {
+    const pct = Number(contact.influenceScore ?? contact.contactIntelligence?.score);
     return Number.isFinite(pct) ? pct : -1;
   }
   if (col === 'followUpDue') return contact.followUpDue || '9999-99-99';
@@ -2335,6 +2511,7 @@ function renderContactsTable(contacts) {
       <th class="text-left px-4 py-3 text-xs font-bold text-slate-500 uppercase tracking-wide">${contactSortButton('name', 'Contact')}</th>
       <th class="text-left px-4 py-3 text-xs font-bold text-slate-500 uppercase tracking-wide">${contactSortButton('relationship', 'Relationship')}</th>
       <th class="text-left px-4 py-3 text-xs font-bold text-slate-500 uppercase tracking-wide">${contactSortButton('experienceMatchPct', 'Experience Match')}</th>
+      <th class="text-left px-4 py-3 text-xs font-bold text-slate-500 uppercase tracking-wide">${contactSortButton('influenceScore', 'Influence')}</th>
       <th class="text-left px-4 py-3 text-xs font-bold text-slate-500 uppercase tracking-wide">${contactSortButton('status', 'Status')}</th>
       <th class="text-left px-4 py-3 text-xs font-bold text-slate-500 uppercase tracking-wide">${contactSortButton('followUpDue', 'Follow-up')}</th>
       <th class="text-left px-4 py-3 text-xs font-bold text-slate-500 uppercase tracking-wide">Action</th>
@@ -2347,6 +2524,9 @@ function renderContactsTable(contacts) {
       </td>
       <td class="px-4 py-3 text-xs text-slate-600">${esc(statusDisplayLabel(contact.relationshipType))}</td>
       <td class="px-4 py-3 text-xs ${contactExperienceMatchClass(contact)}">${esc(contactExperienceMatchLabel(contact))}</td>
+      <td class="px-4 py-3 text-xs ${contactInfluenceClass(contact)}">
+        ${renderScoreDetails('Influence', contactInfluenceLabel(contact), contact.contactIntelligence, 'inline', contactInfluenceClass(contact))}
+      </td>
       <td class="px-4 py-3 text-xs text-slate-600">${esc(contactStatusLabel(contact.responseStatus))}</td>
       <td class="px-4 py-3 text-xs ${contact.followUpDueInDays != null && contact.followUpDueInDays <= 0 ? 'text-amber-700 font-semibold' : 'text-slate-500'}">${esc(contact.followUpDue || '—')}</td>
       <td class="px-4 py-3">
@@ -2394,15 +2574,25 @@ async function renderAnalyticsWorkspace() {
   const resumeRoot = document.getElementById('analytics-resume-root');
   const followupRoot = document.getElementById('analytics-followup-root');
   const outreachRoot = document.getElementById('analytics-outreach-root');
-  if (!summaryRoot || !stageRoot || !resumeRoot || !followupRoot || !outreachRoot) return;
+  const digestRoot = document.getElementById('analytics-digest-root');
+  const priorityRoot = document.getElementById('analytics-priority-root');
+  const staleRoot = document.getElementById('analytics-stale-root');
+  const companyRoot = document.getElementById('analytics-company-root');
+  const resumeFeedbackRoot = document.getElementById('analytics-resume-feedback-root');
+  if (!summaryRoot || !stageRoot || !resumeRoot || !followupRoot || !outreachRoot || !digestRoot || !priorityRoot || !staleRoot || !companyRoot || !resumeFeedbackRoot) return;
   try {
     if (!analyticsSummary) {
       countEl.textContent = 'Loading pipeline health…';
       summaryRoot.innerHTML = '';
+      digestRoot.innerHTML = workspaceLoadingPanel('Loading daily command center…');
+      priorityRoot.innerHTML = workspaceLoadingPanel('Loading unified priority queue…');
       stageRoot.innerHTML = workspaceLoadingPanel('Loading pipeline distribution…');
       resumeRoot.innerHTML = workspaceLoadingPanel('Loading resume scores…');
       followupRoot.innerHTML = workspaceLoadingPanel('Loading follow-up debt…');
       outreachRoot.innerHTML = workspaceLoadingPanel('Loading outreach status…');
+      staleRoot.innerHTML = workspaceLoadingPanel('Loading stale cleanup…');
+      companyRoot.innerHTML = workspaceLoadingPanel('Loading company research…');
+      resumeFeedbackRoot.innerHTML = workspaceLoadingPanel('Loading resume feedback loops…');
     }
     if (!analyticsSummary) analyticsSummary = await fetchAnalyticsSummary();
     const data = analyticsSummary;
@@ -2413,17 +2603,119 @@ async function renderAnalyticsWorkspace() {
       workspaceMetricCard('Follow-ups', data.followUpDebt.count, 'text-amber-700'),
       workspaceMetricCard('Stale', data.staleLeads.count, 'text-rose-700'),
     ].join('');
+    digestRoot.innerHTML = renderDailyCommandCenter(data.commandCenter?.dailyDigest || {});
+    priorityRoot.innerHTML = renderUnifiedPriorityQueue(data.commandCenter?.priorityQueue || []);
     stageRoot.innerHTML = renderKeyValuePanel('PIPELINE DISTRIBUTION', data.stageDistribution);
     resumeRoot.innerHTML = renderKeyValuePanel('RESUME SCORE DISTRIBUTION', data.resumeScoreDistribution);
     followupRoot.innerHTML = renderOutreachList('FOLLOW-UP DEBT', data.followUpDebt.items || [], renderOutreachContactItem);
     outreachRoot.innerHTML = renderKeyValuePanel('OUTREACH RESPONSE STATUS', data.outreachResponseStatus);
+    staleRoot.innerHTML = renderStaleCleanupPanel(data.commandCenter?.staleCleanup || []);
+    companyRoot.innerHTML = renderCompanyResearchRows(data.commandCenter?.companyResearch || []);
+    resumeFeedbackRoot.innerHTML = renderResumeFeedbackPanel(data.commandCenter?.resumeFeedback || []);
   } catch (e) {
     countEl.textContent = 'Analytics unavailable';
     stageRoot.innerHTML = workspaceErrorPanel(e.message);
     resumeRoot.innerHTML = '';
     followupRoot.innerHTML = '';
     outreachRoot.innerHTML = '';
+    digestRoot.innerHTML = '';
+    priorityRoot.innerHTML = '';
+    staleRoot.innerHTML = '';
+    companyRoot.innerHTML = '';
+    resumeFeedbackRoot.innerHTML = '';
   }
+}
+
+function renderAnalyticsJobLink(item, secondary = '') {
+  return `<button class="job-open-btn text-left" data-id="${esc(item.jobId || item.id || '')}">
+    <span class="block text-xs font-semibold text-slate-700 hover:text-blue-600">${esc(item.company || 'Unknown company')}</span>
+    <span class="block text-[11px] text-slate-400">${esc(secondary || item.title || '')}</span>
+  </button>`;
+}
+
+function renderCompactQueueList(items = [], empty = 'No items.') {
+  if (!items.length) return `<p class="text-sm text-slate-400">${esc(empty)}</p>`;
+  return `<div class="divide-y divide-slate-100">${items.map(item => `<div class="py-2 flex items-start justify-between gap-3">
+    ${renderAnalyticsJobLink(item)}
+    ${item.score != null ? `<span class="text-[10px] font-bold rounded px-2 py-0.5 bg-slate-100 text-slate-600">${esc(item.score)}%</span>` : ''}
+  </div>`).join('')}</div>`;
+}
+
+function renderDailyCommandCenter(digest = {}) {
+  const sections = [
+    ['Top Jobs To Apply', digest.topJobsToApply || [], 'No apply priorities.'],
+    ['Follow-ups Due', digest.followUpsDue || [], 'No follow-ups due.'],
+    ['Stale Leads To Clean', digest.staleLeadsToClean || [], 'No stale cleanup items.'],
+    ['High-priority New Roles', digest.highPriorityNewRoles || [], 'No new high-priority roles.'],
+    ['Interviews To Prep', digest.interviewsToPrep || [], 'No interview prep due.'],
+  ];
+  return `<p class="text-label-caps font-label-caps text-slate-500 mb-3">DAILY COMMAND CENTER DIGEST</p>
+    <div class="grid grid-cols-1 lg:grid-cols-5 gap-3">${sections.map(([title, items, empty]) => `<div class="border border-slate-100 rounded-lg p-3">
+      <p class="text-[10px] font-bold uppercase tracking-wide text-slate-400 mb-2">${esc(title)}</p>
+      ${renderCompactQueueList(items, empty)}
+    </div>`).join('')}</div>`;
+}
+
+function renderUnifiedPriorityQueue(items = []) {
+  if (!items.length) return '<p class="text-label-caps font-label-caps text-slate-500 mb-3">UNIFIED PRIORITY QUEUE</p><p class="text-sm text-slate-400">No active opportunities.</p>';
+  return `<p class="text-label-caps font-label-caps text-slate-500 mb-3">UNIFIED PRIORITY QUEUE</p>
+    <div class="overflow-x-auto"><table class="dashboard-table w-full text-sm">
+      <thead><tr class="border-b border-slate-200 bg-slate-50">
+        <th class="text-left px-3 py-2 text-xs font-bold text-slate-500 uppercase tracking-wide">Role</th>
+        <th class="text-left px-3 py-2 text-xs font-bold text-slate-500 uppercase tracking-wide">Priority</th>
+        <th class="text-left px-3 py-2 text-xs font-bold text-slate-500 uppercase tracking-wide">Resume</th>
+        <th class="text-left px-3 py-2 text-xs font-bold text-slate-500 uppercase tracking-wide">Outreach</th>
+        <th class="text-left px-3 py-2 text-xs font-bold text-slate-500 uppercase tracking-wide">Next</th>
+      </tr></thead>
+      <tbody>${items.slice(0, 12).map(item => `<tr class="border-b border-slate-100">
+        <td class="px-3 py-2">${renderAnalyticsJobLink(item, item.title)}</td>
+        <td class="px-3 py-2">${renderScoreDetails('Priority', `${item.score}%`, { explanation: item.explanation, missingSignals: item.missingSignals, action: item.recommendedAction }, 'inline', item.score >= 75 ? 'text-emerald-700' : item.score >= 55 ? 'text-amber-700' : 'text-slate-600')}</td>
+        <td class="px-3 py-2 text-xs text-slate-600">${esc(item.resumeReadiness?.label || 'Review')} · ${esc(item.resumeReadiness?.score ?? '—')}%</td>
+        <td class="px-3 py-2 text-xs text-slate-600">${esc(item.outreachStatus?.label || 'Review')} · ${esc(item.outreachStatus?.score ?? '—')}%</td>
+        <td class="px-3 py-2 text-xs font-semibold text-slate-700">${esc(nextActionLabel(item.nextBestAction || 'review'))}</td>
+      </tr>`).join('')}</tbody>
+    </table></div>`;
+}
+
+function renderStaleCleanupPanel(items = []) {
+  return `<p class="text-label-caps font-label-caps text-slate-500 mb-3">STALE-JOB CLEANUP</p>
+    ${items.length ? `<div class="divide-y divide-slate-100">${items.slice(0, 8).map(item => `<div class="py-2">
+      <div class="flex items-start justify-between gap-3">${renderAnalyticsJobLink(item, item.title)}
+        <span class="text-[10px] font-bold uppercase rounded px-2 py-0.5 bg-amber-50 text-amber-700">${esc(statusDisplayLabel(item.recommendedAction || 'review'))}</span></div>
+      <p class="text-[11px] text-slate-400 mt-1">${esc((item.reasons || []).join(', ') || 'Needs review')}</p>
+    </div>`).join('')}</div>` : '<p class="text-sm text-slate-400">No stale, duplicate, expired, or no-response cleanup items.</p>'}`;
+}
+
+function renderCompanyResearchRows(rows = []) {
+  return `<p class="text-label-caps font-label-caps text-slate-500 mb-3">COMPANY RESEARCH ENRICHMENT</p>
+    ${rows.length ? `<div class="divide-y divide-slate-100">${rows.slice(0, 8).map(row => `<div class="py-2">
+      <div class="flex items-center justify-between gap-3">
+        <p class="text-xs font-semibold text-slate-700">${esc(row.company)}</p>
+        <span class="text-[10px] font-bold rounded px-2 py-0.5 bg-slate-100 text-slate-600">${esc(row.confidence)}%</span>
+      </div>
+      <p class="text-[11px] text-slate-500 mt-1">${esc([row.funding, row.layoffs, row.leadership, row.productCategory].filter(Boolean).join(' · ') || 'Research signals missing')}</p>
+      ${row.missingSignals?.length ? `<p class="text-[11px] text-slate-400 mt-1">Missing: ${esc(row.missingSignals.join(', '))}</p>` : ''}
+    </div>`).join('')}</div>` : '<p class="text-sm text-slate-400">No company research rows yet.</p>'}`;
+}
+
+function renderResumeFeedbackPanel(rows = []) {
+  return `<p class="text-label-caps font-label-caps text-slate-500 mb-3">RESUME VERSION FEEDBACK LOOPS</p>
+    ${rows.length ? `<div class="overflow-x-auto"><table class="dashboard-table w-full text-sm">
+      <thead><tr class="border-b border-slate-200 bg-slate-50">
+        <th class="text-left px-3 py-2 text-xs font-bold text-slate-500 uppercase tracking-wide">Strategy</th>
+        <th class="text-left px-3 py-2 text-xs font-bold text-slate-500 uppercase tracking-wide">Applications</th>
+        <th class="text-left px-3 py-2 text-xs font-bold text-slate-500 uppercase tracking-wide">Reply Rate</th>
+        <th class="text-left px-3 py-2 text-xs font-bold text-slate-500 uppercase tracking-wide">Interview Rate</th>
+        <th class="text-left px-3 py-2 text-xs font-bold text-slate-500 uppercase tracking-wide">Ghosting</th>
+      </tr></thead>
+      <tbody>${rows.map(row => `<tr class="border-b border-slate-100">
+        <td class="px-3 py-2 text-xs font-semibold text-slate-700">${esc(statusDisplayLabel(row.strategy))}</td>
+        <td class="px-3 py-2 text-xs text-slate-600">${esc(row.applications)}</td>
+        <td class="px-3 py-2 text-xs text-slate-600">${esc(row.replyRate)}%</td>
+        <td class="px-3 py-2 text-xs text-slate-600">${esc(row.interviewRate)}%</td>
+        <td class="px-3 py-2 text-xs text-slate-600">${esc(row.ghosting)}</td>
+      </tr>`).join('')}</tbody>
+    </table></div>` : '<p class="text-sm text-slate-400">Generate and use role-specific resumes to start measuring outcomes.</p>'}`;
 }
 
 async function renderSettingsWorkspace() {
@@ -2473,10 +2765,11 @@ function renderKeyValuePanel(title, values = {}) {
     </div>`).join('') || '<p class="text-sm text-slate-400">No data.</p>'}</div>`;
 }
 
-function workspaceMetricCard(label, value, color) {
+function workspaceMetricCard(label, value, color, explanation = null) {
+  const details = explanation ? `<div class="mt-1">${renderScoreDetails(label, value, explanation, 'inline', color)}</div>` : `<p class="text-lg font-bold ${color}">${esc(value)}</p>`;
   return `<div class="bg-white border border-slate-200 rounded-lg p-3 min-h-[72px]">
     <p class="text-[10px] font-bold uppercase tracking-wide text-slate-400">${esc(label)}</p>
-    <p class="text-lg font-bold ${color}">${esc(value)}</p>
+    ${details}
   </div>`;
 }
 

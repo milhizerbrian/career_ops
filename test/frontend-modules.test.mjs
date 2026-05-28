@@ -200,6 +200,30 @@ describe('frontend ES modules', () => {
     assert.match(dashboard, /Workflow Timeline/);
   });
 
+  it('wires command center analytics, score explanations, and research panels', () => {
+    const html = read('public/index.html');
+    const dashboard = read('public/js/dashboard.js');
+
+    for (const id of [
+      'analytics-digest-root',
+      'analytics-priority-root',
+      'analytics-stale-root',
+      'analytics-company-root',
+      'analytics-resume-feedback-root',
+    ]) {
+      assert.match(html, new RegExp(`id="${id}"`));
+    }
+    assert.match(dashboard, /renderDailyCommandCenter/);
+    assert.match(dashboard, /renderUnifiedPriorityQueue/);
+    assert.match(dashboard, /renderStaleCleanupPanel/);
+    assert.match(dashboard, /renderCompanyResearchRows/);
+    assert.match(dashboard, /renderResumeFeedbackPanel/);
+    assert.match(dashboard, /Score Explanations/);
+    assert.match(dashboard, /Why This Role/);
+    assert.match(dashboard, /Company Research/);
+    assert.match(dashboard, /contactInfluenceLabel/);
+  });
+
   it('uses pipeline breakdown as the top dashboard card row', () => {
     const html = read('public/index.html');
     const dashboard = read('public/js/dashboard.js');

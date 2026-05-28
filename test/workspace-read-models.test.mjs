@@ -17,6 +17,13 @@ const job = {
   status: 'applied',
   score: 4,
   date_updated: '2026-05-01',
+  companyResearch: {
+    fundingStage: 'Series C',
+    productCategory: 'Cybersecurity platform',
+    customers: ['Fortune 500'],
+    competitors: ['Beta Security'],
+    recentNews: ['Launched enterprise security workflow'],
+  },
   generatedDocs: {
     default: {
       docxUrl: '/output/acme.docx',
@@ -83,6 +90,8 @@ describe('workspace read models', () => {
     assert.equal(model.id, 'legacy');
     assert.deepEqual(model.contacts, []);
     assert.deepEqual(model.generatedDocs, {});
+    assert.equal(typeof model._search.score, 'number');
+    assert.equal(typeof model._search.dimensions.interviewFit, 'number');
     assert.equal(Array.isArray(model._workflow.timeline), true);
   });
 
@@ -108,6 +117,8 @@ describe('workspace read models', () => {
     assert.equal(contacts.contacts[0].name, 'Alex Morgan');
     assert.equal(contacts.contacts[0].experienceMatchPct, 80);
     assert.equal(contacts.contacts[0].experienceMatchSource, 'ai');
+    assert.equal(typeof contacts.contacts[0].influenceScore, 'number');
+    assert.equal(typeof contacts.contacts[0].contactIntelligence.score, 'number');
     assert.ok(contacts.contacts.some(contact => contact.name === 'Jordan Lee' && contact.legacySource === 'recruiterTargeting'));
     assert.deepEqual(contacts.filters.relationshipTypes, ['recruiter']);
   });
@@ -214,6 +225,14 @@ describe('workspace read models', () => {
     assert.equal(model.stageDistribution.applied, 1);
     assert.equal(model.averageActiveAtsScore, 82);
     assert.equal(model.followUpDebt.count, 1);
+    assert.equal(model.searchScoring.topPriorities.length, 1);
+    assert.equal(model.searchScoring.topPriorities[0].jobId, 'job1');
+    assert.ok(model.searchScoring.outcomeLearning.source);
+    assert.equal(model.commandCenter.priorityQueue[0].jobId, 'job1');
+    assert.equal(model.commandCenter.dailyDigest.followUpsDue.length, 1);
+    assert.equal(model.commandCenter.staleCleanup[0].recommendedAction, 'follow_up');
+    assert.equal(model.commandCenter.companyResearch[0].company, 'Acme Security');
+    assert.ok(model.commandCenter.resumeFeedback[0].replyRate >= 0);
   });
 
   it('builds settings health without exposing secret values', async () => {

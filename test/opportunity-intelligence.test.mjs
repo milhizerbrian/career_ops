@@ -3,12 +3,12 @@ import assert from 'node:assert/strict';
 import { computeOiScore } from '../lib/opportunity-intelligence.mjs';
 
 describe('computeOiScore — bare job (no signals, no text)', () => {
-  it('returns score 0 and all 6 factors Unknown', () => {
+  it('returns score 0 and all 8 factors Unknown', () => {
     const result = computeOiScore({ company: 'Acme', title: 'CSM' });
     assert.equal(result.score, 0);
     assert.equal(result.rating, 'Risky');
-    assert.equal(result.factors.length, 6);
-    assert.equal(result.unknowns.length, 6);
+    assert.equal(result.factors.length, 8);
+    assert.equal(result.unknowns.length, 8);
     for (const f of result.factors) {
       assert.equal(f.score, 0);
       assert.equal(f.value, 'Unknown');
@@ -18,7 +18,7 @@ describe('computeOiScore — bare job (no signals, no text)', () => {
 });
 
 describe('computeOiScore — manual oi_signals', () => {
-  it('perfect signals yield 97 (Excellent)', () => {
+  it('complete strong signals cap at 100 (Excellent)', () => {
     const job = {
       oi_signals: {
         funding_stage: 'series_c',
@@ -27,11 +27,12 @@ describe('computeOiScore — manual oi_signals', () => {
         hiring_velocity: 'high',
         leadership_stability: 'stable',
         pmf_signals: 'strong',
+        customer_traction: 'strong',
+        employee_sentiment: 'positive',
       },
     };
     const result = computeOiScore(job);
-    // 12 + 20 + 20 + 15 + 15 + 15 = 97
-    assert.equal(result.score, 97);
+    assert.equal(result.score, 100);
     assert.equal(result.rating, 'Excellent');
     assert.equal(result.unknowns.length, 0);
   });
@@ -111,6 +112,22 @@ describe('computeOiScore — text inference', () => {
     const f = result.factors.find(x => x.name === 'Product Market Fit');
     assert.equal(f.value, 'Strong');
     assert.equal(f.score, 15);
+  });
+
+  it('infers customer traction from enterprise customer proof', () => {
+    const job = { full_description: 'Trusted by Fortune 500 enterprise customers and more than 1,000 clients globally.' };
+    const result = computeOiScore(job);
+    const f = result.factors.find(x => x.name === 'Customer Traction');
+    assert.equal(f.value, 'Strong');
+    assert.equal(f.score, 10);
+  });
+
+  it('infers employee sentiment from culture warning language', () => {
+    const job = { notes: 'Recent reviews mention burnout, management churn, and low morale.' };
+    const result = computeOiScore(job);
+    const f = result.factors.find(x => x.name === 'Employee Sentiment');
+    assert.equal(f.value, 'Negative');
+    assert.equal(f.score, 0);
   });
 
   it('manual oi_signals override inferred text', () => {
