@@ -77,6 +77,15 @@ describe('getActiveCompanies', () => {
     const axonius = getActiveCompanies(tracker).find(c => c.company === 'Axonius');
     assert.deepEqual(axonius.jobIds.sort(), ['job-1', 'job-3'].sort());
   });
+
+  it('uses tracker object keys when job.id is absent', () => {
+    const keyedTracker = {
+      'url-abc123': { company: 'Axonius', status: 'applied', contacts: [] },
+      'li-456': { company: 'Axonius', status: 'hiring_manager_screen', contacts: [] },
+    };
+    const axonius = getActiveCompanies(keyedTracker).find(c => c.company === 'Axonius');
+    assert.deepEqual(axonius.jobIds.sort(), ['li-456', 'url-abc123'].sort());
+  });
 });
 
 describe('contactCountForCompany', () => {

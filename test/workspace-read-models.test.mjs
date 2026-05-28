@@ -103,9 +103,109 @@ describe('workspace read models', () => {
     const contacts = buildContactsWorkspace([job, recruiterTargetingJob], { now });
     assert.equal(outreach.dueFollowUps.length, 2);
     assert.equal(outreach.drafts.length, 2);
+    assert.equal(outreach.byCompany.find(item => item.company === 'Acme Security').dueCount, 1);
+    assert.equal(outreach.byCompany.find(item => item.company === 'Beta Security').dueCount, 1);
     assert.equal(contacts.contacts[0].name, 'Alex Morgan');
+    assert.equal(contacts.contacts[0].experienceMatchPct, 80);
+    assert.equal(contacts.contacts[0].experienceMatchSource, 'ai');
     assert.ok(contacts.contacts.some(contact => contact.name === 'Jordan Lee' && contact.legacySource === 'recruiterTargeting'));
     assert.deepEqual(contacts.filters.relationshipTypes, ['recruiter']);
+  });
+
+  it('deduplicates contacts attached to multiple jobs at the same company', () => {
+    const jobs = [
+      {
+        id: 'job-a',
+        company: 'Acme Security',
+        title: 'CSM',
+        contacts: [{
+          id: 'contact-a',
+          name: 'Jane Smith',
+          title: 'VP Customer Success',
+          company: 'Acme Security',
+          linkedinUrl: 'https://www.linkedin.com/in/janesmith',
+          relationshipType: 'employee',
+          responseStatus: 'not_contacted',
+        }],
+      },
+      {
+        id: 'job-b',
+        company: 'Acme Security',
+        title: 'Director CSM',
+        contacts: [{
+          id: 'contact-b',
+          name: 'Jane Smith',
+          title: 'VP Customer Success',
+          company: 'Acme Security',
+          linkedinUrl: 'https://www.linkedin.com/in/janesmith',
+          relationshipType: 'employee',
+          responseStatus: 'not_contacted',
+        }],
+      },
+    ];
+
+    const contacts = buildContactsWorkspace(jobs, { now: new Date('2026-05-04T12:00:00.000Z') });
+    assert.equal(contacts.contacts.length, 1);
+    assert.deepEqual(contacts.contacts[0].associatedJobIds.sort(), ['job-a', 'job-b']);
+    assert.equal(contacts.contacts[0].relatedJobCount, 2);
+  });
+
+  it('uses the strongest related job score as contact experience match', () => {
+    const jobs = [
+      {
+        id: 'job-a',
+        company: 'Acme Security',
+        title: 'CSM',
+        score: 3.1,
+        contacts: [{
+          id: 'contact-a',
+          name: 'Jane Smith',
+          title: 'VP Customer Success',
+          company: 'Acme Security',
+          linkedinUrl: 'https://www.linkedin.com/in/janesmith',
+          relationshipType: 'employee',
+          responseStatus: 'not_contacted',
+        }],
+      },
+      {
+        id: 'job-b',
+        company: 'Acme Security',
+        title: 'Director CSM',
+        score: 4.4,
+        contacts: [{
+          id: 'contact-b',
+          name: 'Jane Smith',
+          title: 'VP Customer Success',
+          company: 'Acme Security',
+          linkedinUrl: 'https://www.linkedin.com/in/janesmith',
+          relationshipType: 'employee',
+          responseStatus: 'not_contacted',
+        }],
+      },
+    ];
+
+    const contacts = buildContactsWorkspace(jobs, { now: new Date('2026-05-04T12:00:00.000Z') });
+
+    assert.equal(contacts.contacts[0].experienceMatchPct, 88);
+  });
+
+  it('uses report score as AI contact experience match when top-level score is missing', () => {
+    const contacts = buildContactsWorkspace([{
+      id: 'job-a',
+      company: 'Acme Security',
+      title: 'CSM',
+      report: { score: 3.7 },
+      contacts: [{
+        id: 'contact-a',
+        name: 'Jane Smith',
+        title: 'VP Customer Success',
+        company: 'Acme Security',
+        relationshipType: 'employee',
+        responseStatus: 'not_contacted',
+      }],
+    }], { now: new Date('2026-05-04T12:00:00.000Z') });
+
+    assert.equal(contacts.contacts[0].experienceMatchPct, 74);
   });
 
   it('builds operational analytics', () => {

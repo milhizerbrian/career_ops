@@ -7,7 +7,6 @@ import path from 'path';
 import { execFile } from 'child_process';
 import { promisify } from 'util';
 import yaml from 'js-yaml';
-import { chromium } from 'playwright';
 import { fileURLToPath } from 'url';
 import { getLmStudioAnalysisModel } from '../lib/lm-studio-config.mjs';
 import { resolveTemplatePath } from '../lib/docx-utils.mjs';
@@ -133,16 +132,9 @@ export async function checkLmStudio(fetchImpl = fetch, env = process.env) {
   }
 }
 
-export function checkPlaywrightChromium() {
-  try {
-    const executable = chromium.executablePath();
-    if (executable && fs.existsSync(executable)) {
-      return makeCheck('PASS', 'Playwright Chromium', 'installed');
-    }
-    return makeCheck('FAIL', 'Playwright Chromium', 'browser executable not found');
-  } catch (err) {
-    return makeCheck('FAIL', 'Playwright Chromium', err.message);
-  }
+export function checkGoLogin(env = process.env) {
+  if (env.GOLOGIN_PROFILE_ID) return makeCheck('PASS', 'GoLogin', 'profile configured; connects to local desktop app');
+  return makeCheck('WARN', 'GoLogin', 'GOLOGIN_PROFILE_ID not set; headless Chromium fallback active');
 }
 
 export function checkResumeTemplate() {
@@ -214,7 +206,7 @@ export async function runHealthChecks({ env = process.env, fetchImpl = fetch } =
     checkAnthropicEnv(env),
     checkGmailEnv(env),
     await checkPdfTools(env),
-    checkPlaywrightChromium(),
+    checkGoLogin(env),
     checkResumeTemplate(),
     checkResumeTruthSources(dataDir),
     checkTrackerJson(trackerPath),
@@ -223,7 +215,7 @@ export async function runHealthChecks({ env = process.env, fetchImpl = fetch } =
   ];
   if (isEnabled(env.CAREER_OPS_HEALTH_NON_SECRET)) {
     return checks.map(check => (
-      check.status === 'FAIL' && ['Playwright Chromium', 'Resume template', 'Resume truth files', 'Profile YAML'].includes(check.name)
+      check.status === 'FAIL' && ['GoLogin', 'Resume template', 'Resume truth files', 'Profile YAML'].includes(check.name)
         ? { ...check, status: 'WARN', message: `${check.message}; skipped in non-secret CI mode` }
         : check
     ));

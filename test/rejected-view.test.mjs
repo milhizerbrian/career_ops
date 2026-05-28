@@ -17,10 +17,12 @@ describe('rejected roles view', () => {
     assert.match(html, /Rejected Roles/);
   });
 
-  it('keeps rejected roles out of the main dashboard opportunity list', () => {
+  it('keeps inactive roles out of the main dashboard opportunity list', () => {
     const dashboard = read('public/js/dashboard.js');
 
-    assert.match(dashboard, /function isRejectedJob\(job\)/);
+    assert.match(dashboard, /function isInactiveDashboardJob\(job\)/);
+    assert.match(dashboard, /rejected\?|declined\|pass/);
+    assert.match(dashboard, /closed\|archived\|withdrawn/);
     assert.match(dashboard, /function visibleDashboardJobs\(jobs\)/);
     assert.match(dashboard, /const dashboardJobs = visibleDashboardJobs\(allJobs\)/);
     assert.match(dashboard, /let list = allJobs\.filter\(isRejectedJob\)/);

@@ -112,6 +112,23 @@ describe('server API routes', () => {
     assert.equal(job.gmailAmbiguityResolution.resolvedStatus, 'recruiter_screen');
   });
 
+  it('returns a computed read model from editable job updates', async () => {
+    const result = await request('/api/jobs/job1', {
+      method: 'PATCH',
+      body: JSON.stringify({ flagged: true }),
+    });
+
+    assert.equal(result.res.status, 200);
+    assert.equal(result.body.ok, true);
+    assert.equal(result.body.job.id, 'job1');
+    assert.equal(result.body.job.flagged, true);
+    assert.ok(result.body.job._workflow);
+    assert.ok(result.body.job._ats);
+    assert.ok(result.body.job._oi);
+    assert.equal(Array.isArray(result.body.job.resumeVersions), true);
+    assert.equal(Array.isArray(result.body.job.contacts), true);
+  });
+
   it('persists manual workflow events', async () => {
     const result = await request('/api/jobs/job1/workflow-event', {
       method: 'POST',
@@ -120,6 +137,10 @@ describe('server API routes', () => {
 
     assert.equal(result.res.status, 200);
     assert.equal(result.body.ok, true);
+    assert.ok(result.body.job._workflow);
+    assert.ok(result.body.job._ats);
+    assert.ok(result.body.job._oi);
+    assert.equal(Array.isArray(result.body.job.resumeVersions), true);
     assert.equal(tracker().job1.workflowTimeline.at(-1).type, 'note_added');
     assert.match(tracker().job1.notes, /Prep account notes/);
   });
@@ -150,6 +171,10 @@ describe('server API routes', () => {
     });
     assert.equal(saved.res.status, 200);
     assert.equal(saved.body.contact.name, 'Alex Morgan');
+    assert.ok(saved.body.job._workflow);
+    assert.ok(saved.body.job._ats);
+    assert.ok(saved.body.job._oi);
+    assert.equal(Array.isArray(saved.body.job.contacts), true);
     assert.equal(tracker().job1.contacts[0].name, 'Alex Morgan');
   });
 
@@ -162,6 +187,10 @@ describe('server API routes', () => {
 
     assert.equal(result.res.status, 200);
     assert.equal(result.body.draft.contactId, contactId);
+    assert.ok(result.body.job._workflow);
+    assert.ok(result.body.job._ats);
+    assert.ok(result.body.job._oi);
+    assert.equal(Array.isArray(result.body.job.contacts), true);
     assert.match(result.body.draft.text, /Acme Security/);
     assert.equal(tracker().job1.contacts[0].outreachDrafts.length, 1);
   });

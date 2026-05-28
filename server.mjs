@@ -9,9 +9,9 @@ import { fileURLToPath } from 'url';
 import path from 'path';
 import fs from 'fs';
 
-import { getCachedDashboard, invalidateCache } from './lib/cache.mjs';
-import { loadBragDoc, loadJobById, loadPipeline, dismissPipelineItem, updateJob } from './lib/data.mjs';
-import { updateTracker } from './lib/tracker-store.mjs';
+import { getCachedDashboard, getCachedValue, getCachedValueAsync, invalidateCache } from './lib/cache.mjs';
+import { loadBragDoc, loadJobById, loadPipeline, dismissPipelineItem } from './lib/data.mjs';
+import { updateTracker, updateJobWithPrevious } from './lib/tracker-store.mjs';
 import { generateResume, analyzeGaps, generateGapQuestions, applyGapAnswersToBragDoc, assessStoredJobDescription } from './lib/resume-gen.mjs';
 import { startWatcher } from './lib/watcher.mjs';
 import { scoreAtsMatch } from './lib/ats-utils.mjs';
@@ -60,9 +60,26 @@ const httpServer = createServer(app);
 const io = new Server(httpServer);
 const PORT = parseInt(process.env.PORT ?? '3000', 10);
 const OUTPUT_DIR = path.resolve(APP_ROOT, 'output');
+const STATIC_DIR = path.resolve(APP_ROOT, 'public');
 const resumeRuns = new Map();
+let resumeRunsVersion = 0;
 
 fs.mkdirSync(OUTPUT_DIR, { recursive: true });
+
+function bumpResumeRunsVersion() {
+  resumeRunsVersion += 1;
+}
+
+function computedJobReadModel(job) {
+  return buildJobReadModel(job, { bragDoc: loadBragDoc() });
+}
+
+function cachedJobById(jobId) {
+  const { jobs } = getCachedDashboard();
+  const job = jobs.find(item => item.id === jobId);
+  if (!job) throw new Error(`Job not found in tracker: ${jobId}`);
+  return job;
+}
 
 function resumeRun(jobId) {
   if (!resumeRuns.has(jobId)) {
@@ -75,6 +92,7 @@ function resumeRun(jobId) {
       complete: null,
       error: null,
     });
+    bumpResumeRunsVersion();
   }
   return resumeRuns.get(jobId);
 }
@@ -93,6 +111,7 @@ function recordResumeEvent(jobId, event, payload = {}) {
     run.status = 'failed';
     run.error = payload.message || 'Resume generation failed';
   }
+  bumpResumeRunsVersion();
   return entry;
 }
 
@@ -123,7 +142,6 @@ const SPA_ROUTES = [
   '/outreach',
   '/contacts',
   '/gmail-review',
-  '/gmail-revoew',
   '/interviews',
   '/rejected',
   '/analytics',
@@ -185,11 +203,13 @@ app.get('/api/brag-quality', (req, res) => {
 
 app.get('/api/workspaces/resume', (req, res) => {
   try {
-    const { jobs } = getCachedDashboard();
-    res.json(buildResumeWorkspace(jobs, {
-      resumeRuns: [...resumeRuns.values()],
-      sourceQuality: analyzeBragDocQuality(loadBragDoc()),
-      assessJobDescription: assessStoredJobDescription,
+    res.json(getCachedValue(`workspace:resume:${resumeRunsVersion}`, () => {
+      const { jobs } = getCachedDashboard();
+      return buildResumeWorkspace(jobs, {
+        resumeRuns: [...resumeRuns.values()],
+        sourceQuality: analyzeBragDocQuality(loadBragDoc()),
+        assessJobDescription: assessStoredJobDescription,
+      });
     }));
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -198,8 +218,10 @@ app.get('/api/workspaces/resume', (req, res) => {
 
 app.get('/api/workspaces/outreach', (req, res) => {
   try {
-    const { jobs } = getCachedDashboard();
-    res.json(buildOutreachWorkspace(jobs));
+    res.json(getCachedValue('workspace:outreach', () => {
+      const { jobs } = getCachedDashboard();
+      return buildOutreachWorkspace(jobs);
+    }));
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -207,8 +229,10 @@ app.get('/api/workspaces/outreach', (req, res) => {
 
 app.get('/api/workspaces/contacts', (req, res) => {
   try {
-    const { jobs } = getCachedDashboard();
-    res.json(buildContactsWorkspace(jobs));
+    res.json(getCachedValue('workspace:contacts', () => {
+      const { jobs } = getCachedDashboard();
+      return buildContactsWorkspace(jobs);
+    }));
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -216,8 +240,10 @@ app.get('/api/workspaces/contacts', (req, res) => {
 
 app.get('/api/analytics/summary', (req, res) => {
   try {
-    const { jobs } = getCachedDashboard();
-    res.json(buildAnalyticsSummary(jobs));
+    res.json(getCachedValue('analytics:summary', () => {
+      const { jobs } = getCachedDashboard();
+      return buildAnalyticsSummary(jobs);
+    }));
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -225,7 +251,7 @@ app.get('/api/analytics/summary', (req, res) => {
 
 app.get('/api/settings/health', async (req, res) => {
   try {
-    res.json(await buildSettingsHealth({ runHealthChecks }));
+    res.json(await getCachedValueAsync('settings:health', () => buildSettingsHealth({ runHealthChecks })));
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -340,8 +366,10 @@ app.post('/api/recruiter-targeting/:id/contact-attempt', express.json(), (req, r
 
 app.get('/api/recruiter-analytics', (req, res) => {
   try {
-    const { jobs } = getCachedDashboard();
-    res.json(buildRecruiterAnalytics(jobs));
+    res.json(getCachedValue('recruiter:analytics', () => {
+      const { jobs } = getCachedDashboard();
+      return buildRecruiterAnalytics(jobs);
+    }));
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -411,11 +439,10 @@ app.patch('/api/jobs/:id', express.json(), (req, res) => {
       Object.entries(req.body ?? {}).filter(([k]) => EDITABLE.includes(k))
     );
     if (!Object.keys(fields).length) return res.status(400).json({ error: 'No editable fields provided' });
-    const previous = loadJobById(req.params.id);
     if (fields.status !== undefined) fields.status = normalizeStatus(fields.status);
     const flagOnly = Object.keys(fields).every(k => k === 'flagged');
     if (!flagOnly) fields.date_updated = new Date().toISOString().slice(0, 10);
-    const result = updateJob(req.params.id, job => {
+    const { updated: result } = updateJobWithPrevious(req.params.id, (job, previous) => {
       const next = { ...job, ...fields };
       if (fields.status && fields.status !== normalizeStatus(previous.status)) {
         const eventType = fields.status === 'applied'
@@ -430,7 +457,7 @@ app.patch('/api/jobs/:id', express.json(), (req, res) => {
       return next;
     });
     invalidateCache();
-    res.json({ ok: true, job: result });
+    res.json({ ok: true, job: computedJobReadModel(result) });
   } catch (err) {
     res.status(err.message.includes('not found') ? 404 : 500).json({ error: err.message });
   }
@@ -455,10 +482,9 @@ app.delete('/api/jobs/:id', (req, res) => {
 
 app.post('/api/jobs/:id/workflow-event', express.json(), (req, res) => {
   try {
-    loadJobById(req.params.id);
-    const result = updateJob(req.params.id, job => applyManualWorkflowEvent(job, req.body));
+    const { updated: result } = updateJobWithPrevious(req.params.id, job => applyManualWorkflowEvent(job, req.body));
     invalidateCache();
-    res.json({ ok: true, job: result });
+    res.json({ ok: true, job: computedJobReadModel(result) });
   } catch (err) {
     const status = err.message.includes('not found') ? 404 : 400;
     res.status(status).json({ error: err.message });
@@ -467,14 +493,13 @@ app.post('/api/jobs/:id/workflow-event', express.json(), (req, res) => {
 
 app.post('/api/jobs/:id/contacts', express.json(), (req, res) => {
   try {
-    loadJobById(req.params.id);
     let savedContact;
-    const result = updateJob(req.params.id, job => {
+    const { updated: result } = updateJobWithPrevious(req.params.id, job => {
       savedContact = upsertJobContact(job, req.body);
       return job;
     });
     invalidateCache();
-    res.json({ ok: true, contact: savedContact, job: result });
+    res.json({ ok: true, contact: savedContact, job: computedJobReadModel(result) });
   } catch (err) {
     const status = err.message.includes('not found') ? 404 : 400;
     res.status(status).json({ error: err.message });
@@ -483,14 +508,14 @@ app.post('/api/jobs/:id/contacts', express.json(), (req, res) => {
 
 app.post('/api/jobs/:id/contacts/outreach-draft', express.json(), async (req, res) => {
   try {
-    const currentJob = loadJobById(req.params.id);
+    const currentJob = cachedJobById(req.params.id);
     const draft = await createOutreachDraft(currentJob, req.body);
-    const result = updateJob(req.params.id, job => {
+    const { updated: result } = updateJobWithPrevious(req.params.id, job => {
       storeOutreachDraft(job, draft);
       return job;
     });
     invalidateCache();
-    res.json({ ok: true, draft, job: result });
+    res.json({ ok: true, draft, job: computedJobReadModel(result) });
   } catch (err) {
     const status = err.message.includes('not found') ? 404 : 400;
     res.status(status).json({ error: err.message });
@@ -630,6 +655,7 @@ app.post('/api/create-docs/:id', express.json(), async (req, res) => {
     complete: null,
     error: null,
   });
+  bumpResumeRunsVersion();
   res.json({ started: true, jobId });
   const runIo = resumeIo();
   const resources = beginSharedResumeResources();
@@ -645,7 +671,22 @@ app.post('/api/create-docs/:id', express.json(), async (req, res) => {
 });
 
 app.use('/output', express.static(OUTPUT_DIR));
-app.use(express.static(path.resolve(APP_ROOT, 'public')));
+app.use('/vendor', express.static(path.resolve(STATIC_DIR, 'vendor'), {
+  maxAge: '30d',
+  immutable: true,
+}));
+app.use('/css', express.static(path.resolve(STATIC_DIR, 'css'), {
+  maxAge: '1h',
+  etag: true,
+}));
+app.use('/js', express.static(path.resolve(STATIC_DIR, 'js'), {
+  maxAge: '1h',
+  etag: true,
+}));
+app.use(express.static(STATIC_DIR, {
+  maxAge: 0,
+  etag: true,
+}));
 
 io.on('connection', socket => {
   process.stdout.write(`[socket.io] connected: ${socket.id}\n`);

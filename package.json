@@ -6,14 +6,16 @@
   "scripts": {
     "start": "node server.mjs",
     "test": "node --test test/*.test.mjs",
+    "build:css": "tailwindcss -c tailwind.config.cjs -i ./public/css/tailwind.input.css -o ./public/css/tailwind.generated.css --minify",
     "scan": "node scan.mjs",
     "scan:linkedin": "node scan-linkedin.mjs",
     "scan:linkedin:browser": "node scan-linkedin-browser.mjs",
+    "scan:wttj:browser": "node scan-wttj-browser.mjs",
     "evaluate": "node evaluate.mjs",
     "pipeline": "node scan.mjs --days 2 && node evaluate.mjs --concurrency 4",
     "pipeline:full": "node scan.mjs --days 10 && node evaluate.mjs --concurrency 4",
     "pipeline:linkedin": "node scan-linkedin.mjs",
-    "pipeline:all": "node scan.mjs --days 2 && node scan-linkedin.mjs && node scan-linkedin-browser.mjs && node evaluate.mjs --concurrency 4",
+    "pipeline:all": "node scan.mjs --days 2 && node scan-linkedin.mjs && node scan-linkedin-browser.mjs && node scan-wttj-browser.mjs && node evaluate.mjs --concurrency 4",
     "gmail-sync": "node gmail-sync.mjs",
     "health": "node scripts/health-check.mjs",
     "enrich:brag": "node scripts/enrich-brag-doc.mjs",
@@ -31,5 +33,8 @@
     "pizzip": "^3.2.0",
     "playwright": "^1.59.1",
     "socket.io": "^4.8.3"
+  },
+  "devDependencies": {
+    "tailwindcss": "^3.4.17"
   }
 }

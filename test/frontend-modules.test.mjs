@@ -64,6 +64,14 @@ describe('frontend ES modules', () => {
     assert.match(dashboard, /window\.setOppSort = setOppSort/);
   });
 
+  it('offers short posted-date filters on the dashboard', () => {
+    const html = read('public/index.html');
+
+    assert.match(html, /id="opp-posted-filter"/);
+    assert.match(html, /<option value="1">Last 1 day<\/option>/);
+    assert.match(html, /<option value="3">Last 3 days<\/option>/);
+  });
+
   it('wires a standalone ambiguous Gmail review page', () => {
     const html = read('public/index.html');
     const dashboard = read('public/js/dashboard.js');
@@ -86,7 +94,6 @@ describe('frontend ES modules', () => {
     assert.match(dashboard, /showView\('gmail-review'\)/);
     assert.match(dashboard, /\/gmail-review/);
     assert.match(server, /\/gmail-review/);
-    assert.match(server, /\/gmail-revoew/);
     assert.match(dashboard, /attachGmailAmbiguity/);
     assert.match(dashboard, /dismissGmailAmbiguity/);
     assert.match(api, /\/api\/gmail-jobs\/'\s*\+\s*encodeURIComponent\(threadId\)\s*\+\s*'\/attach/);
@@ -147,6 +154,22 @@ describe('frontend ES modules', () => {
     assert.match(dashboard, /generatedResumeVersions/);
     assert.match(dashboard, /Resume Versions/);
     assert.match(dashboard, /resumeVersionScoreLabel/);
+  });
+
+  it('wires performance helpers for delegated events, debounced search, and lazy details', () => {
+    const dashboard = read('public/js/dashboard.js');
+
+    assert.match(dashboard, /function debounce\(fn, delay = 150\)/);
+    assert.match(dashboard, /function delegate\(root, eventName, selector, handler\)/);
+    assert.match(dashboard, /setupDelegatedWorkspaceActions/);
+    assert.match(dashboard, /function ensureDetailRow\(detailRow, job, htmlBuilder\)/);
+    assert.match(dashboard, /dataset\.lazyBuilt/);
+    assert.match(dashboard, /function hasGeneratedResume\(job\)/);
+    assert.match(dashboard, /!hasGeneratedResume\(job\)/);
+    assert.match(dashboard, /'global-search'\)\.addEventListener\('input', debounce\(applyOppFilters\)\)/);
+    assert.match(dashboard, /'int-search'\)\.addEventListener\('input',\s+debounce\(renderInterviews\)\)/);
+    assert.match(dashboard, /'rej-search'\)\.addEventListener\('input', debounce\(renderRejected\)\)/);
+    assert.match(dashboard, /'contacts-search'\)\?\.addEventListener\('input', debounce\(renderContactsWorkspace\)\)/);
   });
 
   it('does not render the brag doc quality coach on the dashboard', () => {
@@ -227,11 +250,30 @@ describe('frontend ES modules', () => {
     const api = read('public/js/api.js');
     const server = read('server.mjs');
 
-    assert.match(dashboard, /contact-workspace/);
-    assert.match(dashboard, /bindContactWorkspace/);
-    assert.match(dashboard, /contact-outreach-btn/);
+    assert.match(dashboard, /function renderContactsWorkspace/);
+    assert.match(dashboard, /contact-edit-workspace/);
+    assert.match(dashboard, /contact-status-editor/);
+    assert.match(dashboard, /contactStatusLabel/);
+    assert.match(dashboard, /Request Sent/);
+    assert.match(dashboard, /Connected/);
+    assert.match(dashboard, /Experience Match/);
+    assert.match(dashboard, /experienceMatchPct/);
+    assert.match(dashboard, /contacts-sort-btn/);
+    assert.match(dashboard, /function sortContacts/);
+    assert.match(dashboard, /function setContactsSort/);
+    assert.match(dashboard, /LinkedIn profile/);
+    assert.match(dashboard, /contact\.linkedinUrl/);
+    assert.match(dashboard, /fetchContactsWorkspace/);
+    assert.doesNotMatch(dashboard, /parts\.push\(renderContactWorkspace\(job\)\)/);
     assert.match(api, /upsertJobContact/);
     assert.match(server, /\/api\/jobs\/:id\/contacts/);
+  });
+
+  it('does not render workflow or contact editors inside job detail panels', () => {
+    const dashboard = read('public/js/dashboard.js');
+
+    assert.doesNotMatch(dashboard, /parts\.push\(renderWorkflowActions\(job\)\)/);
+    assert.doesNotMatch(dashboard, /parts\.push\(renderContactWorkspace\(job\)\)/);
   });
 
   it('wires contact outreach draft generation', () => {

@@ -47,13 +47,64 @@ let contactsWorkspace = null;
 let analyticsSummary = null;
 let settingsHealth = null;
 let currentJobDetailId = '';
+let contactsSort = { col: 'experienceMatchPct', dir: 'desc' };
+let delegatedWorkspaceActionsReady = false;
+
+const INACTIVE_DASHBOARD_STATUS_RE = /\b(rejected?|declined|pass(?:ed)?|closed|archived|withdrawn)\b/i;
+
+function debounce(fn, delay = 150) {
+  let timer = null;
+  return (...args) => {
+    clearTimeout(timer);
+    timer = setTimeout(() => fn(...args), delay);
+  };
+}
+
+function delegate(root, eventName, selector, handler) {
+  root?.addEventListener(eventName, event => {
+    const target = event.target.closest(selector);
+    if (!target || !root.contains(target)) return;
+    handler(event, target);
+  });
+}
+
+function jobById(jobId) {
+  return allJobs.find(job => job.id === jobId);
+}
+
+function replaceJobInState(job) {
+  if (!job?.id) return;
+  const idx = allJobs.findIndex(item => item.id === job.id);
+  if (idx === -1) allJobs.unshift(job);
+  else allJobs[idx] = job;
+  invalidateWorkspaceCaches();
+}
+
+function applyJobMutation(job) {
+  replaceJobInState(job);
+  renderAllViews();
+}
+
+function ensureDetailRow(detailRow, job, htmlBuilder) {
+  const cell = detailRow?.querySelector('td');
+  if (!cell || cell.dataset.lazyBuilt === '1') return;
+  cell.innerHTML = htmlBuilder(job);
+  cell.dataset.lazyBuilt = '1';
+  bindWorkflowActions(cell);
+  bindContactWorkspace(cell);
+  bindInterviewNoteActions(cell);
+}
 
 function isRejectedJob(job) {
-  return (job?.status || '').toLowerCase() === 'rejected';
+  return /\b(rejected?|declined|pass(?:ed)?)\b/i.test(String(job?.status || '').toLowerCase());
+}
+
+function isInactiveDashboardJob(job) {
+  return INACTIVE_DASHBOARD_STATUS_RE.test(String(job?.status || '').toLowerCase());
 }
 
 function visibleDashboardJobs(jobs) {
-  return jobs.filter(job => !isRejectedJob(job));
+  return jobs.filter(job => !isInactiveDashboardJob(job));
 }
 
 function setupSidebarControls() {
@@ -231,9 +282,7 @@ window.addEventListener('popstate', () => {
   showView(viewFromPath(), { push: false });
 });
 
-document.getElementById('global-search').addEventListener('input', () => {
-  applyOppFilters();
-});
+document.getElementById('global-search').addEventListener('input', debounce(applyOppFilters));
 
 // ─── Profile header ───────────────────────────────────────────────────────────
 function applyProfileToHeader() {
@@ -397,8 +446,18 @@ function jobIsStaleLead(job) {
 
 function jobNeedsResume(job) {
   return job._workflow?.nextBestAction === 'generate_resume' || (
-    (job.status || '') === 'lead' && generatedResumeVersions(job).length === 0
+    (job.status || '') === 'lead' && !hasGeneratedResume(job)
   );
+}
+
+function hasGeneratedResume(job) {
+  const docs = job?.generatedDocs;
+  if (!docs || typeof docs !== 'object' || Array.isArray(docs)) return false;
+  return Object.values(docs).some(entry => {
+    if (!entry || typeof entry !== 'object') return false;
+    if (entry.docxUrl) return true;
+    return Array.isArray(entry.history) && entry.history.some(item => item?.docxUrl);
+  });
 }
 
 function jobReadyToApply(job) {
@@ -977,7 +1036,8 @@ function applyOppFilters() {
     const dRow = document.createElement('tr');
     dRow.id = detailId;
     dRow.className = 'hidden bg-slate-50/60';
-    dRow.innerHTML = `<td colspan="7" class="px-6 py-4 border-b border-slate-100">${buildDetailPanel(job)}</td>`;
+    dRow.dataset.jobId = job.id;
+    dRow.innerHTML = `<td colspan="7" class="px-6 py-4 border-b border-slate-100"></td>`;
 
     const pRow = document.createElement('tr');
     pRow.id = 'opp-prog-' + job.id;
@@ -1006,7 +1066,11 @@ function applyOppFilters() {
     tr.addEventListener('click', e => {
       if (e.target.closest('.gen-btn') || e.target.closest('.open-job-btn') || e.target.closest('.edit-btn') || e.target.closest('.del-btn')) return;
       const dRow = document.getElementById(tr.dataset.detailId);
-      if (dRow) dRow.classList.toggle('hidden');
+      const job = jobById(dRow?.dataset.jobId);
+      if (dRow && job) {
+        ensureDetailRow(dRow, job, buildDetailPanel);
+        dRow.classList.toggle('hidden');
+      }
     });
   });
 
@@ -1065,9 +1129,6 @@ function buildDetailPanel(job) {
         ${staleText ? `<span class="text-xs font-semibold text-amber-700 bg-amber-50 rounded px-2 py-1">${esc(staleText)}</span>` : ''}
       </div>`);
   }
-
-  parts.push(renderWorkflowActions(job));
-  parts.push(renderContactWorkspace(job));
 
   // Score analysis / email snippet
   const analysis = job.score_analysis || job.last_email_snippet || job.notes || '';
@@ -1380,7 +1441,7 @@ function setupInterviews() {
     intSel.appendChild(o);
   });
 
-  document.getElementById('int-search').addEventListener('input',          renderInterviews);
+  document.getElementById('int-search').addEventListener('input',          debounce(renderInterviews));
   document.getElementById('int-status-filter').addEventListener('change',  renderInterviews);
   document.getElementById('int-sort').addEventListener('change',            renderInterviews);
 
@@ -1469,7 +1530,8 @@ function renderInterviews() {
     const dRow = document.createElement('tr');
     dRow.id = detailId;
     dRow.className = 'hidden bg-slate-50/60';
-    dRow.innerHTML = `<td colspan="6" class="px-6 py-5 border-b border-slate-100">${buildIntDetailPanel(job)}</td>`;
+    dRow.dataset.jobId = job.id;
+    dRow.innerHTML = `<td colspan="6" class="px-6 py-5 border-b border-slate-100"></td>`;
 
     // Progress row
     const pRow = document.createElement('tr');
@@ -1489,7 +1551,12 @@ function renderInterviews() {
   tbody.querySelectorAll('tr[data-detail-id]').forEach(tr => {
     tr.addEventListener('click', e => {
       if (e.target.closest('.int-add-note-btn') || e.target.closest('.int-edit-btn')) return;
-      document.getElementById(tr.dataset.detailId)?.classList.toggle('hidden');
+      const dRow = document.getElementById(tr.dataset.detailId);
+      const job = jobById(dRow?.dataset.jobId);
+      if (dRow && job) {
+        ensureDetailRow(dRow, job, buildIntDetailPanel);
+        dRow.classList.toggle('hidden');
+      }
     });
   });
 
@@ -1501,19 +1568,28 @@ function renderInterviews() {
     btn.addEventListener('click', () => openEditModal(btn.dataset.id));
   });
 
-  // Note textarea → show submit only when content present
-  tbody.querySelectorAll('.int-note-input').forEach(ta => {
-    const submitBtn = tbody.querySelector(`.int-note-submit[data-id="${CSS.escape(ta.dataset.id)}"]`);
+  bindInterviewNoteActions(tbody);
+  bindWorkflowActions(tbody);
+  bindContactWorkspace(tbody);
+}
+
+function bindInterviewNoteActions(root = document) {
+  root.querySelectorAll('.int-note-input').forEach(ta => {
+    if (ta.dataset.bound === '1') return;
+    ta.dataset.bound = '1';
+    const submitBtn = root.querySelector(`.int-note-submit[data-id="${CSS.escape(ta.dataset.id)}"]`);
     ta.addEventListener('input', () => {
       if (submitBtn) submitBtn.classList.toggle('hidden', !ta.value.trim());
     });
   });
 
-  tbody.querySelectorAll('.int-note-submit').forEach(btn => {
+  root.querySelectorAll('.int-note-submit').forEach(btn => {
+    if (btn.dataset.bound === '1') return;
+    btn.dataset.bound = '1';
     btn.addEventListener('click', async () => {
       const jobId = btn.dataset.id;
-      const ta    = tbody.querySelector(`.int-note-input[data-id="${CSS.escape(jobId)}"]`);
-      const logEl = tbody.querySelector(`.int-notes-log[data-id="${CSS.escape(jobId)}"]`);
+      const ta    = root.querySelector(`.int-note-input[data-id="${CSS.escape(jobId)}"]`);
+      const logEl = root.querySelector(`.int-notes-log[data-id="${CSS.escape(jobId)}"]`);
       const text  = ta.value.trim();
       if (!text) return;
       btn.disabled = true;
@@ -1523,8 +1599,9 @@ function renderInterviews() {
       const existing = (job?.notes || '').trim();
       const newNotes = existing ? `${today}: ${text}\n${existing}` : `${today}: ${text}`;
       try {
-        await patchJob(jobId, { notes: newNotes });
-        if (job) job.notes = newNotes;
+        const result = await patchJob(jobId, { notes: newNotes });
+        if (result.job) replaceJobInState(result.job);
+        else if (job) job.notes = newNotes;
         ta.value = '';
         btn.classList.add('hidden');
         if (logEl) logEl.innerHTML = renderNotesLog(newNotes);
@@ -1536,9 +1613,6 @@ function renderInterviews() {
       }
     });
   });
-
-  bindWorkflowActions(tbody);
-  bindContactWorkspace(tbody);
 }
 
 function bindWorkflowActions(root = document) {
@@ -1577,10 +1651,9 @@ async function submitWorkflowAction(panel, type, btn) {
   }
   if (errorEl) errorEl.classList.add('hidden');
   try {
-    await postWorkflowEvent(jobId, { type, note });
-    await refreshDashboardState();
+    const result = await postWorkflowEvent(jobId, { type, note });
+    if (result.job) applyJobMutation(result.job);
     if (input) input.value = '';
-    renderAllViews();
   } catch (e) {
     if (errorEl) {
       errorEl.textContent = e.message;
@@ -1660,9 +1733,8 @@ async function submitContact(panel, btn) {
   btn.textContent = 'Saving...';
   errorEl?.classList.add('hidden');
   try {
-    await upsertJobContact(panel.dataset.jobId, { contact: readContactForm(panel) });
-    await refreshDashboardState();
-    renderAllViews();
+    const result = await upsertJobContact(panel.dataset.jobId, { contact: readContactForm(panel) });
+    if (result.job) applyJobMutation(result.job);
   } catch (e) {
     if (errorEl) {
       errorEl.textContent = e.message;
@@ -1681,12 +1753,11 @@ async function markContactOutreach(panel, contactId, btn) {
   btn.disabled = true;
   btn.textContent = 'Saving...';
   try {
-    await upsertJobContact(panel.dataset.jobId, {
+    const result = await upsertJobContact(panel.dataset.jobId, {
       contact: { ...contact, responseStatus: 'outreach_sent' },
       markOutreachSent: true,
     });
-    await refreshDashboardState();
-    renderAllViews();
+    if (result.job) applyJobMutation(result.job);
   } catch (e) {
     const errorEl = panel.querySelector('.contact-error');
     if (errorEl) {
@@ -1707,9 +1778,8 @@ async function generateContactDraft(panel, row, btn) {
   btn.disabled = true;
   btn.textContent = 'Generating...';
   try {
-    await generateContactOutreachDraft(panel.dataset.jobId, { contactId, type });
-    await refreshDashboardState();
-    renderAllViews();
+    const result = await generateContactOutreachDraft(panel.dataset.jobId, { contactId, type });
+    if (result.job) applyJobMutation(result.job);
   } catch (e) {
     const errorEl = panel.querySelector('.contact-error');
     if (errorEl) {
@@ -1754,9 +1824,42 @@ function invalidateWorkspaceCaches() {
 
 function setupOperationalWorkspaces() {
   document.getElementById('resume-filter')?.addEventListener('change', renderResumeWorkspace);
-  document.getElementById('contacts-search')?.addEventListener('input', renderContactsWorkspace);
+  document.getElementById('contacts-search')?.addEventListener('input', debounce(renderContactsWorkspace));
   document.getElementById('contacts-relationship-filter')?.addEventListener('change', renderContactsWorkspace);
   document.getElementById('contacts-response-filter')?.addEventListener('change', renderContactsWorkspace);
+  setupDelegatedWorkspaceActions();
+}
+
+function setupDelegatedWorkspaceActions() {
+  if (delegatedWorkspaceActionsReady) return;
+  delegatedWorkspaceActionsReady = true;
+
+  const resumeRoot = document.getElementById('resume-queue-root');
+  delegate(resumeRoot, 'click', '.resume-job-link', (event, btn) => showJobDetail(btn.dataset.id));
+  delegate(resumeRoot, 'click', '.gen-btn', (event, btn) => triggerGenerate(btn.dataset.id, btn));
+
+  const outreachRoot = document.getElementById('view-outreach');
+  delegate(outreachRoot, 'click', '.outreach-open-job', (event, btn) => showJobDetail(btn.dataset.id));
+  delegate(outreachRoot, 'click', '.draft-copy-btn', async (event, btn) => {
+    await navigator.clipboard?.writeText(btn.dataset.text || '');
+    btn.textContent = 'Copied';
+    setTimeout(() => { btn.textContent = 'Copy'; }, 1200);
+  });
+  delegate(outreachRoot, 'click', '.draft-regenerate-btn', async (event, btn) => {
+    const result = await generateContactOutreachDraft(btn.dataset.jobId, { contactId: btn.dataset.contactId, type: btn.dataset.type });
+    if (result.job) replaceJobInState(result.job);
+    else invalidateWorkspaceCaches();
+    renderOutreachWorkspace();
+  });
+  delegate(outreachRoot, 'click', '.draft-mark-sent-btn', async (event, btn) => {
+    const job = allJobs.find(item => item.id === btn.dataset.jobId);
+    const contact = (job?.contacts || []).find(item => item.id === btn.dataset.contactId);
+    if (!contact) return;
+    const result = await upsertJobContact(btn.dataset.jobId, { contact: { ...contact, responseStatus: 'outreach_sent' }, markOutreachSent: true });
+    if (result.job) replaceJobInState(result.job);
+    else invalidateWorkspaceCaches();
+    renderOutreachWorkspace();
+  });
 }
 
 function renderWorkspaceView(viewName) {
@@ -1938,8 +2041,6 @@ async function renderResumeWorkspace() {
     queueRoot.innerHTML = renderResumeQueueTable(queue);
     versionsRoot.innerHTML = renderResumeVersionHistory(data.versions || []);
     qualityRoot.innerHTML = renderSourceQualityCoach(data.sourceQuality);
-    queueRoot.querySelectorAll('.resume-job-link').forEach(btn => btn.addEventListener('click', () => showJobDetail(btn.dataset.id)));
-    queueRoot.querySelectorAll('.gen-btn').forEach(btn => btn.addEventListener('click', () => triggerGenerate(btn.dataset.id, btn)));
   } catch (e) {
     countEl.textContent = 'Resume workspace unavailable';
     queueRoot.innerHTML = workspaceErrorPanel(e.message);
@@ -2052,7 +2153,6 @@ async function renderOutreachWorkspace() {
     draftsRoot.innerHTML = renderOutreachList('DRAFTS', data.drafts, renderDraftItem);
     sentRoot.innerHTML = renderOutreachList('SENT OUTREACH', data.sentOutreach, renderOutreachContactItem);
     repliesRoot.innerHTML = renderOutreachList('REPLIES', data.replies, renderOutreachContactItem);
-    bindOutreachWorkspaceActions(document.getElementById('view-outreach'));
   } catch (e) {
     countEl.textContent = 'Outreach unavailable';
     dueRoot.innerHTML = workspaceErrorPanel(e.message);
@@ -2106,18 +2206,18 @@ function bindOutreachWorkspaceActions(root) {
     setTimeout(() => { btn.textContent = 'Copy'; }, 1200);
   }));
   root.querySelectorAll('.draft-regenerate-btn').forEach(btn => btn.addEventListener('click', async () => {
-    await generateContactOutreachDraft(btn.dataset.jobId, { contactId: btn.dataset.contactId, type: btn.dataset.type });
-    invalidateWorkspaceCaches();
-    await refreshDashboardState();
+    const result = await generateContactOutreachDraft(btn.dataset.jobId, { contactId: btn.dataset.contactId, type: btn.dataset.type });
+    if (result.job) replaceJobInState(result.job);
+    else invalidateWorkspaceCaches();
     renderOutreachWorkspace();
   }));
   root.querySelectorAll('.draft-mark-sent-btn').forEach(btn => btn.addEventListener('click', async () => {
     const job = allJobs.find(item => item.id === btn.dataset.jobId);
     const contact = (job?.contacts || []).find(item => item.id === btn.dataset.contactId);
     if (!contact) return;
-    await upsertJobContact(btn.dataset.jobId, { contact: { ...contact, responseStatus: 'outreach_sent' }, markOutreachSent: true });
-    invalidateWorkspaceCaches();
-    await refreshDashboardState();
+    const result = await upsertJobContact(btn.dataset.jobId, { contact: { ...contact, responseStatus: 'outreach_sent' }, markOutreachSent: true });
+    if (result.job) replaceJobInState(result.job);
+    else invalidateWorkspaceCaches();
     renderOutreachWorkspace();
   }));
 }
@@ -2132,7 +2232,7 @@ async function renderContactsWorkspace() {
       root.innerHTML = workspaceLoadingPanel('Loading contacts…');
       contactsWorkspace = await fetchContactsWorkspace();
       populateWorkspaceSelect('contacts-relationship-filter', contactsWorkspace.filters.relationshipTypes, 'All relationships');
-      populateWorkspaceSelect('contacts-response-filter', contactsWorkspace.filters.responseStatuses, 'All response states');
+      populateWorkspaceSelect('contacts-response-filter', contactsWorkspace.filters.responseStatuses, 'All statuses', contactStatusLabel);
     }
     const q = (document.getElementById('contacts-search')?.value || '').toLowerCase();
     const relationship = document.getElementById('contacts-relationship-filter')?.value || '';
@@ -2141,6 +2241,7 @@ async function renderContactsWorkspace() {
     if (q) contacts = contacts.filter(contact => [contact.name, contact.company, contact.jobCompany, contact.jobTitle, contact.title].join(' ').toLowerCase().includes(q));
     if (relationship) contacts = contacts.filter(contact => contact.relationshipType === relationship);
     if (response) contacts = contacts.filter(contact => contact.responseStatus === response);
+    contacts = sortContacts(contacts);
     countEl.textContent = `${contacts.length} of ${(contactsWorkspace.contacts || []).length} contact${(contactsWorkspace.contacts || []).length === 1 ? '' : 's'}`;
     root.innerHTML = renderContactsTable(contacts);
     bindContactsWorkspaceActions(root, contacts);
@@ -2150,46 +2251,137 @@ async function renderContactsWorkspace() {
   }
 }
 
-function populateWorkspaceSelect(id, values, label) {
+function populateWorkspaceSelect(id, values, label, display = statusDisplayLabel) {
   const select = document.getElementById(id);
   if (!select || select.dataset.populated === '1') return;
-  select.innerHTML = `<option value="">${esc(label)}</option>` + values.map(value => `<option value="${esc(value)}">${esc(statusDisplayLabel(value))}</option>`).join('');
+  select.innerHTML = `<option value="">${esc(label)}</option>` + values.map(value => `<option value="${esc(value)}">${esc(display(value))}</option>`).join('');
   select.dataset.populated = '1';
+}
+
+function contactStatusLabel(status) {
+  return ({
+    not_contacted: 'Not Contacted',
+    outreach_sent: 'Request Sent',
+    responded: 'Connected',
+  })[status] || statusDisplayLabel(status);
+}
+
+function contactStatusOptions(selected) {
+  return [
+    ['not_contacted', 'Not Contacted'],
+    ['outreach_sent', 'Request Sent'],
+    ['responded', 'Connected'],
+  ].map(([value, label]) => `<option value="${value}" ${selected === value ? 'selected' : ''}>${label}</option>`).join('');
+}
+
+function contactExperienceMatchLabel(contact) {
+  const pct = Number(contact?.experienceMatchPct);
+  return Number.isFinite(pct) ? `${Math.round(pct)}%` : '—';
+}
+
+function contactExperienceMatchClass(contact) {
+  const pct = Number(contact?.experienceMatchPct);
+  if (!Number.isFinite(pct)) return 'text-slate-400';
+  if (pct >= 80) return 'text-emerald-700 font-semibold';
+  if (pct >= 50) return 'text-amber-700 font-semibold';
+  return 'text-rose-600 font-semibold';
+}
+
+function setContactsSort(col) {
+  contactsSort = {
+    col,
+    dir: contactsSort.col === col && contactsSort.dir === 'asc' ? 'desc' : 'asc',
+  };
+  renderContactsWorkspace();
+}
+
+function contactsSortIcon(col) {
+  if (contactsSort.col !== col) return '';
+  return contactsSort.dir === 'asc' ? '↑' : '↓';
+}
+
+function contactSortButton(col, label) {
+  return `<button class="contacts-sort-btn inline-flex items-center gap-1 hover:text-blue-600" data-col="${esc(col)}">${esc(label)}<span class="text-[10px]">${contactsSortIcon(col)}</span></button>`;
+}
+
+function contactSortValue(contact, col) {
+  if (col === 'experienceMatchPct') {
+    const pct = Number(contact.experienceMatchPct);
+    return Number.isFinite(pct) ? pct : -1;
+  }
+  if (col === 'followUpDue') return contact.followUpDue || '9999-99-99';
+  if (col === 'status') return contactStatusLabel(contact.responseStatus);
+  if (col === 'relationship') return statusDisplayLabel(contact.relationshipType);
+  if (col === 'company') return contact.jobCompany || contact.company || '';
+  return contact.name || '';
+}
+
+function sortContacts(contacts) {
+  const direction = contactsSort.dir === 'asc' ? 1 : -1;
+  return [...contacts].sort((a, b) => {
+    const av = contactSortValue(a, contactsSort.col);
+    const bv = contactSortValue(b, contactsSort.col);
+    if (typeof av === 'number' || typeof bv === 'number') {
+      return ((Number(av) || 0) - (Number(bv) || 0)) * direction || String(a.name || '').localeCompare(String(b.name || ''));
+    }
+    return String(av).localeCompare(String(bv)) * direction || String(a.name || '').localeCompare(String(b.name || ''));
+  });
 }
 
 function renderContactsTable(contacts) {
   if (!contacts.length) return '<div class="p-12 text-center text-slate-400">No contacts match these filters.</div>';
   return `<table class="dashboard-table w-full text-sm">
     <thead><tr class="border-b border-slate-200 bg-slate-50">
-      <th class="text-left px-4 py-3 text-xs font-bold text-slate-500 uppercase tracking-wide">Contact</th>
-      <th class="text-left px-4 py-3 text-xs font-bold text-slate-500 uppercase tracking-wide">Relationship</th>
-      <th class="text-left px-4 py-3 text-xs font-bold text-slate-500 uppercase tracking-wide">Response</th>
-      <th class="text-left px-4 py-3 text-xs font-bold text-slate-500 uppercase tracking-wide">Follow-up</th>
+      <th class="text-left px-4 py-3 text-xs font-bold text-slate-500 uppercase tracking-wide">${contactSortButton('name', 'Contact')}</th>
+      <th class="text-left px-4 py-3 text-xs font-bold text-slate-500 uppercase tracking-wide">${contactSortButton('relationship', 'Relationship')}</th>
+      <th class="text-left px-4 py-3 text-xs font-bold text-slate-500 uppercase tracking-wide">${contactSortButton('experienceMatchPct', 'Experience Match')}</th>
+      <th class="text-left px-4 py-3 text-xs font-bold text-slate-500 uppercase tracking-wide">${contactSortButton('status', 'Status')}</th>
+      <th class="text-left px-4 py-3 text-xs font-bold text-slate-500 uppercase tracking-wide">${contactSortButton('followUpDue', 'Follow-up')}</th>
       <th class="text-left px-4 py-3 text-xs font-bold text-slate-500 uppercase tracking-wide">Action</th>
     </tr></thead>
     <tbody>${contacts.map(contact => `<tr class="border-b border-slate-100 hover:bg-slate-50">
-      <td class="px-4 py-3"><p class="font-semibold text-slate-800">${esc(contact.name)}</p><p class="text-xs text-slate-500">${esc(contact.title || '')} · ${esc(contact.jobCompany)} · ${esc(contact.jobTitle)}</p></td>
+      <td class="px-4 py-3">
+        <p class="font-semibold text-slate-800">${esc(contact.name)}</p>
+        <p class="text-xs text-slate-500">${esc(contact.title || '')} · ${esc(contact.jobCompany)} · ${esc(contact.jobTitle)}</p>
+        ${contact.linkedinUrl ? `<a class="inline-flex items-center gap-1 text-xs font-semibold text-blue-600 hover:underline mt-1" href="${esc(contact.linkedinUrl)}" target="_blank" rel="noopener"><span class="material-symbols-outlined text-sm">open_in_new</span><span>LinkedIn profile</span></a>` : ''}
+      </td>
       <td class="px-4 py-3 text-xs text-slate-600">${esc(statusDisplayLabel(contact.relationshipType))}</td>
-      <td class="px-4 py-3 text-xs text-slate-600">${esc(statusDisplayLabel(contact.responseStatus))}</td>
+      <td class="px-4 py-3 text-xs ${contactExperienceMatchClass(contact)}">${esc(contactExperienceMatchLabel(contact))}</td>
+      <td class="px-4 py-3 text-xs text-slate-600">${esc(contactStatusLabel(contact.responseStatus))}</td>
       <td class="px-4 py-3 text-xs ${contact.followUpDueInDays != null && contact.followUpDueInDays <= 0 ? 'text-amber-700 font-semibold' : 'text-slate-500'}">${esc(contact.followUpDue || '—')}</td>
-      <td class="px-4 py-3"><div class="flex gap-2">
-        <button class="contact-open-job text-xs font-semibold text-blue-600 border border-blue-100 rounded-lg px-3 py-1.5 hover:bg-blue-50" data-id="${esc(contact.jobId)}">Open</button>
-        <button class="contact-edit-workspace text-xs font-semibold text-slate-600 border border-slate-200 rounded-lg px-3 py-1.5 hover:bg-slate-50" data-job-id="${esc(contact.jobId)}" data-contact-id="${esc(contact.id)}">Edit</button>
-      </div></td>
+      <td class="px-4 py-3">
+        <div class="flex gap-2">
+          <button class="contact-open-job text-xs font-semibold text-blue-600 border border-blue-100 rounded-lg px-3 py-1.5 hover:bg-blue-50" data-id="${esc(contact.jobId)}">Open</button>
+          <button class="contact-edit-workspace text-xs font-semibold text-slate-600 border border-slate-200 rounded-lg px-3 py-1.5 hover:bg-slate-50" data-job-id="${esc(contact.jobId)}" data-contact-id="${esc(contact.id)}">Edit</button>
+        </div>
+        <div class="contact-status-editor hidden mt-2 flex flex-wrap items-center gap-2" data-job-id="${esc(contact.jobId)}" data-contact-id="${esc(contact.id)}">
+          <select class="contact-status-select bg-white border border-slate-200 rounded-lg px-2 py-1.5 text-xs outline-none focus:ring-2 focus:ring-blue-600/20">${contactStatusOptions(contact.responseStatus || 'not_contacted')}</select>
+          <button class="contact-status-save text-xs font-semibold text-white bg-primary rounded-lg px-3 py-1.5 hover:opacity-90">Save</button>
+          <button class="contact-status-cancel text-xs font-semibold text-slate-600 border border-slate-200 rounded-lg px-3 py-1.5 hover:bg-slate-50">Cancel</button>
+        </div>
+      </td>
     </tr>`).join('')}</tbody>
   </table>`;
 }
 
 function bindContactsWorkspaceActions(root, contacts) {
+  root.querySelectorAll('.contacts-sort-btn').forEach(btn => btn.addEventListener('click', () => setContactsSort(btn.dataset.col)));
   root.querySelectorAll('.contact-open-job').forEach(btn => btn.addEventListener('click', () => showJobDetail(btn.dataset.id)));
   root.querySelectorAll('.contact-edit-workspace').forEach(btn => btn.addEventListener('click', async () => {
-    const contact = contacts.find(item => item.id === btn.dataset.contactId && item.jobId === btn.dataset.jobId);
+    const editor = root.querySelector(`.contact-status-editor[data-job-id="${CSS.escape(btn.dataset.jobId)}"][data-contact-id="${CSS.escape(btn.dataset.contactId)}"]`);
+    editor?.classList.remove('hidden');
+  }));
+  root.querySelectorAll('.contact-status-cancel').forEach(btn => btn.addEventListener('click', () => {
+    btn.closest('.contact-status-editor')?.classList.add('hidden');
+  }));
+  root.querySelectorAll('.contact-status-save').forEach(btn => btn.addEventListener('click', async () => {
+    const editor = btn.closest('.contact-status-editor');
+    const contact = contacts.find(item => item.id === editor?.dataset.contactId && item.jobId === editor?.dataset.jobId);
     if (!contact) return;
-    const followUpDue = window.prompt('Follow-up due date (YYYY-MM-DD)', contact.followUpDue || '');
-    if (followUpDue == null) return;
-    await upsertJobContact(contact.jobId, { contact: { ...contact, followUpDue } });
-    invalidateWorkspaceCaches();
-    await refreshDashboardState();
+    const responseStatus = editor.querySelector('.contact-status-select')?.value || 'not_contacted';
+    const result = await upsertJobContact(contact.jobId, { contact: { ...contact, responseStatus } });
+    if (result.job) replaceJobInState(result.job);
+    else invalidateWorkspaceCaches();
     renderContactsWorkspace();
   }));
 }
@@ -2296,7 +2488,7 @@ function healthStatusClass(status) {
 
 // ─── Rejected roles ──────────────────────────────────────────────────────────
 function setupRejected() {
-  document.getElementById('rej-search').addEventListener('input', renderRejected);
+  document.getElementById('rej-search').addEventListener('input', debounce(renderRejected));
   document.getElementById('rej-sort').addEventListener('change', renderRejected);
   renderRejected();
 }
@@ -2376,7 +2568,8 @@ function renderRejected() {
     const dRow = document.createElement('tr');
     dRow.id = detailId;
     dRow.className = 'hidden bg-slate-50/60';
-    dRow.innerHTML = `<td colspan="6" class="px-6 py-5 border-b border-slate-100">${buildIntDetailPanel(job)}</td>`;
+    dRow.dataset.jobId = job.id;
+    dRow.innerHTML = `<td colspan="6" class="px-6 py-5 border-b border-slate-100"></td>`;
 
     const pRow = document.createElement('tr');
     pRow.id = 'rej-prog-' + job.id;
@@ -2394,7 +2587,12 @@ function renderRejected() {
   tbody.querySelectorAll('tr[data-detail-id]').forEach(tr => {
     tr.addEventListener('click', e => {
       if (e.target.closest('.rej-gen-btn') || e.target.closest('.rej-edit-btn') || e.target.closest('.rej-del-btn')) return;
-      document.getElementById(tr.dataset.detailId)?.classList.toggle('hidden');
+      const dRow = document.getElementById(tr.dataset.detailId);
+      const job = jobById(dRow?.dataset.jobId);
+      if (dRow && job) {
+        ensureDetailRow(dRow, job, buildIntDetailPanel);
+        dRow.classList.toggle('hidden');
+      }
     });
   });
 
@@ -2444,6 +2642,8 @@ function renderNotesLog(notesStr) {
 function openInterviewNote(jobId) {
   const detailRow = document.getElementById('int-detail-' + jobId);
   if (!detailRow) return;
+  const job = jobById(jobId);
+  if (job) ensureDetailRow(detailRow, job, buildIntDetailPanel);
   detailRow.classList.remove('hidden');
   const noteInput = detailRow.querySelector(`.int-note-input[data-id="${CSS.escape(jobId)}"]`);
   noteInput?.focus();
@@ -2462,11 +2662,8 @@ async function toggleJobFlag(jobId, btn) {
   btn.title = nowFlagged ? 'Unflag job' : 'Flag job';
   if (icon) icon.style.fontVariationSettings = nowFlagged ? "'FILL' 1" : '';
   try {
-    await fetch(`/api/jobs/${encodeURIComponent(jobId)}`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ flagged: nowFlagged }),
-    });
+    const result = await patchJob(jobId, { flagged: nowFlagged });
+    if (result.job) replaceJobInState(result.job);
   } catch {
     job.flagged = !nowFlagged; // revert on failure
     applyOppFilters();
@@ -2781,11 +2978,13 @@ async function saveEditModal() {
   document.getElementById('edit-error').classList.add('hidden');
 
   try {
-    await patchJob(jobId, body);
-
-    // Update in-memory job list and re-render
-    const idx = allJobs.findIndex(j => j.id === jobId);
-    if (idx !== -1) allJobs[idx] = { ...allJobs[idx], ...body };
+    const result = await patchJob(jobId, body);
+    if (result.job) replaceJobInState(result.job);
+    else {
+      const idx = allJobs.findIndex(j => j.id === jobId);
+      if (idx !== -1) allJobs[idx] = { ...allJobs[idx], ...body };
+      invalidateWorkspaceCaches();
+    }
     closeEditModal();
     renderAllViews();
   } catch (e) {

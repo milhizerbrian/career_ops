@@ -4,7 +4,7 @@ import '../lib/env.mjs';
 import { load as cheerioLoad } from 'cheerio';
 import { upsertJobContact } from '../lib/job-contacts.mjs';
 import { loadTracker, updateTracker } from '../lib/tracker-store.mjs';
-import { withBrowser } from '../lib/gologin-browser.mjs';
+import { withBrowser, saveLinkedInCookie } from '../lib/gologin-browser.mjs';
 
 const ACTIVE_STATUSES = new Set([
   'applied', 'recruiter_screen', 'hiring_manager_screen', 'technical_screen',
@@ -14,9 +14,9 @@ const TITLE_KEYWORDS = ['vp', 'vice president', 'director', 'head of', 'chief cu
 
 export function matchesContactTitle(title) {
   const t = title.toLowerCase();
-  const hasCS  = t.includes('customer success');
-  const hasCCO = t.includes('chief customer') || t.includes('cco');
-  if (!hasCS && !hasCCO) return false;
+  const hasCCO = t.includes('chief customer') || /\bcco\b/.test(t);
+  if (hasCCO) return true; // CCO / Chief Customer Officer is always a match
+  if (!t.includes('customer success')) return false;
   return TITLE_KEYWORDS.some(kw => t.includes(kw));
 }
 
@@ -31,11 +31,11 @@ export function buildSearchUrl(company) {
 
 export function getActiveCompanies(tracker) {
   const map = new Map();
-  for (const job of Object.values(tracker)) {
+  for (const [id, job] of Object.entries(tracker)) {
     if (!ACTIVE_STATUSES.has(job.status) || !job.company) continue;
     const key = job.company.toLowerCase().trim();
     if (!map.has(key)) map.set(key, { company: job.company, jobIds: [] });
-    map.get(key).jobIds.push(job.id);
+    map.get(key).jobIds.push(job.id || id);
   }
   return [...map.values()];
 }
@@ -60,21 +60,51 @@ export function parseContactCards(html) {
   const $ = cheerioLoad(html);
   const contacts = [];
 
-  $('li.reusable-search__result-container, li[class*="result-container"]').each((_, el) => {
+  $('[role="listitem"], li.reusable-search__result-container, .reusable-search__result-container').each((_, el) => {
     try {
       const $el = $(el);
 
-      const nameEl = $el.find('.entity-result__title-text a span[aria-hidden="true"]').first();
-      const name = nameEl.text().trim();
-      if (!name || name === 'LinkedIn Member') return;
-
-      const rawTitle = $el.find('.entity-result__primary-subtitle').first().text().trim();
-      const title = rawTitle.replace(/\s+at\s+.+$/i, '').trim();
-      if (!matchesContactTitle(title)) return;
-
-      const href = $el.find('.entity-result__title-text a').first().attr('href') || '';
-      const linkedinUrl = normalizeLinkedInUrl(href);
+      // Profile URL: first /in/ link in the card
+      let linkedinUrl = '';
+      $el.find('a[href*="linkedin.com/in/"], a[href^="/in/"]').each((_, a) => {
+        if (!linkedinUrl) linkedinUrl = normalizeLinkedInUrl($(a).attr('href') || '');
+      });
       if (!linkedinUrl) return;
+
+      // Name: profile photo img alt on live pages, title link text in saved/search fixtures.
+      let name = '';
+      $el.find('img[alt]').each((_, img) => {
+        const alt = ($(img).attr('alt') || '').trim();
+        if (alt && alt !== 'LinkedIn Member' && !name) name = alt;
+      });
+      if (!name) {
+        name = $el.find('.entity-result__title-text a span[aria-hidden="true"]').first().text().trim()
+          || $el.find('.entity-result__title-text a').first().text().trim();
+      }
+      if (!name) return;
+
+      // Title: LinkedIn alternates between subtitle divs and leaf spans depending on page variant.
+      let title = '';
+      const titleCandidates = [
+        $el.find('.entity-result__primary-subtitle').first().text().trim(),
+        $el.find('.entity-result__summary').first().text().trim(),
+      ].filter(Boolean);
+      $el.find('span').each((_, span) => {
+        if ($(span).children().length > 0) return; // skip non-leaf spans
+        titleCandidates.push($(span).text().trim());
+      });
+
+      for (const text of titleCandidates) {
+        if (matchesContactTitle(text)) {
+          const cleaned = text.replace(/^Current:\s*/i, '');
+          // Split on pipe, find the segment that itself matches CS keywords
+          const segments = cleaned.split(/\s*\|\s*/);
+          const best = segments.find(s => matchesContactTitle(s)) || segments[0];
+          title = best.replace(/\s+at\s+.+$/i, '').trim();
+          break;
+        }
+      }
+      if (!title) return;
 
       contacts.push({ name, title, linkedinUrl });
     } catch { /* skip malformed card */ }
@@ -115,7 +145,7 @@ async function scrapeAllCompanies(
     const checkPage = await browser.newPage();
     await checkPage.goto('https://www.linkedin.com/feed/', {
       waitUntil: 'domcontentloaded',
-      timeout:   20_000,
+      timeout:   30_000,
     });
     const checkUrl = checkPage.url();
     await checkPage.close();
@@ -139,7 +169,8 @@ async function scrapeAllCompanies(
         const page = await browser.newPage();
         const url  = buildSearchUrl(company);
 
-        await page.goto(url, { waitUntil: 'networkidle', timeout: 15_000 });
+        await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 30_000 });
+        await sleep(3000); // let search results render
 
         if (isAuthWall(page.url())) {
           await page.close();
@@ -166,10 +197,11 @@ async function scrapeAllCompanies(
             process.stdout.write(`    · ${c.name} — ${c.title} (${c.linkedinUrl})\n`);
           }
         } else {
-          for (const contact of found) {
-            for (const jobId of jobIds) {
-              if (!tracker[jobId]) continue;
-              upsertJobContact(tracker[jobId], {
+          const applyContacts = (draft) => {
+            for (const contact of found) {
+              const jobId = jobIds.find(id => draft[id]);
+              if (!jobId) continue;
+              upsertJobContact(draft[jobId], {
                 name:             contact.name,
                 title:            contact.title,
                 company,
@@ -178,9 +210,11 @@ async function scrapeAllCompanies(
                 responseStatus:   'not_contacted',
               });
             }
-          }
+          };
+
           // Save after each company so a mid-run interruption preserves progress
-          updateTracker(tracker);
+          updateTracker(applyContacts);
+          applyContacts(tracker);
         }
 
         companiesScraped++;
@@ -197,30 +231,29 @@ async function scrapeAllCompanies(
   return { companiesScraped, contactsFound, companiesSkipped, errors };
 }
 
-async function doLogin() {
-  process.stdout.write('Starting GoLogin browser for LinkedIn login…\n');
-  await withBrowser(async (browser) => {
-    const page = await browser.newPage();
-    await page.goto('https://www.linkedin.com/login', {
-      waitUntil: 'domcontentloaded',
-      timeout: 20_000,
-    });
-    process.stdout.write(
-      '\nBrowser open — log in to LinkedIn, then press Enter here to save session and exit.\n'
-    );
-    await new Promise(resolve => {
-      process.stdin.setRawMode(false);
-      process.stdin.resume();
-      process.stdin.once('data', () => {
-        process.stdin.pause();
-        resolve();
-      });
-    });
-    await page.close();
-  });
-  process.stdout.write(
-    'Session saved to GoLogin profile. You can now run the scraper without --login.\n'
-  );
+function doLogin() {
+  process.stdout.write(`
+LinkedIn session setup — one-time steps:
+
+  1. Open LinkedIn in Chrome (linkedin.com) — you should already be logged in
+  2. Open DevTools: Cmd+Option+I
+  3. Application tab → Cookies → https://www.linkedin.com
+  4. Find the cookie named  li_at  and copy its Value
+
+  5. Run:
+       node scripts/scrape-linkedin-contacts.mjs --set-cookie <paste_value_here>
+
+That's it. After that, run the scraper normally without any flags.
+`);
+}
+
+function doSetCookie(value) {
+  if (!value || value.length < 20) {
+    process.stderr.write('Error: provide the full li_at cookie value after --set-cookie\n');
+    process.exit(1);
+  }
+  saveLinkedInCookie(value);
+  process.stdout.write('LinkedIn session cookie saved. Run the scraper now.\n');
 }
 
 async function main() {
@@ -231,9 +264,15 @@ async function main() {
   const limit         = limitIdx >= 0 ? parseInt(args[limitIdx + 1], 10) : Infinity;
   const companyIdx    = args.indexOf('--company');
   const companyFilter = companyIdx >= 0 ? (args[companyIdx + 1] ?? '').toLowerCase() : null;
+  const setCookieIdx  = args.indexOf('--set-cookie');
 
   if (loginMode) {
-    await doLogin();
+    doLogin();
+    return;
+  }
+
+  if (setCookieIdx >= 0) {
+    doSetCookie(args[setCookieIdx + 1]);
     return;
   }
 

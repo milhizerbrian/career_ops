@@ -18,9 +18,11 @@ import './lib/env.mjs';
  */
 
 import { readFileSync, existsSync, mkdirSync } from 'fs';
+import { pathToFileURL } from 'url';
 import { load as cheerioLoad } from 'cheerio';
 import yaml from 'js-yaml';
 import { findDuplicateJob } from './lib/dedupe-utils.mjs';
+import { scoreWithClaude, scoreWithLmStudio } from './lib/evaluator.mjs';
 import { getLmStudioAnalysisModel } from './lib/lm-studio-config.mjs';
 import { loadTracker as loadStoredTracker, updateTracker } from './lib/tracker-store.mjs';
 import { appendTextSafe, writeTextAtomic } from './lib/atomic-file.mjs';
@@ -103,11 +105,16 @@ const SECTION_HEADINGS = {
   responsibilities: [
     'responsibilities', "what you'll do", 'what you will do', 'your role',
     'key responsibilities', 'duties', 'the role', 'in this role',
+    'day to day', 'what you will be doing', 'what you’ll do',
+    'what you’ll be doing', 'about the role', 'role overview',
   ],
   requirements: [
     'requirements', "what you'll need", 'what we need', 'required qualifications',
     'must have', 'minimum qualifications', 'basic qualifications', 'you have',
-    'you bring', 'what you need',
+    'you bring', 'what you need', 'what we are looking for',
+    "what we're looking for", 'what we’re looking for', 'about you',
+    'required skills', 'skills and experience', 'experience required',
+    'your background', 'who you are', 'you should have',
   ],
   qualifications: [
     'qualifications', 'preferred qualifications', 'nice to have', 'preferred',
@@ -127,7 +134,113 @@ function classifyHeading(text) {
   return null;
 }
 
-function parseSections($, container) {
+function appendSectionItem(result, section, value) {
+  if (!section || !result[section]) return;
+  const text = String(value || '')
+    .replace(/\s+/g, ' ')
+    .replace(/^[\-•*●▪]\s*/, '')
+    .trim();
+  if (text.length < 18) return;
+  if (!result[section].includes(text)) result[section].push(text);
+}
+
+function blockText($, container) {
+  const clone = container.clone();
+  clone.find('br').replaceWith('\n');
+  clone.find('li').each((_, el) => {
+    const item = $(el);
+    item.append('\n');
+  });
+  clone.find('p,div,h1,h2,h3,h4,h5,h6,section,ul,ol').each((_, el) => {
+    $(el).append('\n');
+  });
+  return clone.text()
+    .replace(/\r/g, '\n')
+    .replace(/\u00a0/g, ' ')
+    .replace(/[ \t]+\n/g, '\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+}
+
+function splitLikelyLines(text) {
+  const headingWords = [
+    'responsibilities', "what you'll do", 'what you will do', 'what you’ll do',
+    'requirements', 'required qualifications', 'minimum qualifications',
+    'basic qualifications', 'preferred qualifications', 'what we need',
+    'what we are looking for', "what we're looking for", 'what we’re looking for',
+    'about you', 'who you are', 'you have', 'you bring', 'qualifications',
+    'benefits', 'what we offer', 'perks', 'compensation and benefits',
+    'the role', 'in this role', 'about the role',
+  ];
+  const headingPattern = headingWords
+    .map(s => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/\s+/g, '\\s+'))
+    .join('|');
+  return text
+    .replace(new RegExp(`\\s+((?:${headingPattern})\\s*:?)`, 'gi'), '\n$1')
+    .split(/\n+|(?=\s*[•●▪]\s+)/)
+    .map(line => line.replace(/^[\s\-•*●▪]+/, '').trim())
+    .filter(Boolean);
+}
+
+function parseSectionsFromText(text) {
+  const result = { responsibilities: [], requirements: [], qualifications: [], benefits: [] };
+  let current = null;
+
+  for (const line of splitLikelyLines(text)) {
+    const headingCandidate = line.replace(/:$/, '').trim();
+    if (headingCandidate.length <= 100) {
+      const section = classifyHeading(headingCandidate);
+      if (section) {
+        current = section;
+        continue;
+      }
+    }
+
+    const colon = line.indexOf(':');
+    if (colon > 0 && colon <= 90) {
+      const section = classifyHeading(line.slice(0, colon));
+      if (section) {
+        current = section;
+        appendSectionItem(result, current, line.slice(colon + 1));
+        continue;
+      }
+    }
+
+    appendSectionItem(result, current, line);
+  }
+
+  return result;
+}
+
+function inferMissingSectionsFromText(sections, text) {
+  const sentenceCandidates = text
+    .replace(/\r/g, '\n')
+    .split(/(?:\n+|(?<=[.!?])\s+|[•●▪]\s*)/)
+    .map(s => s.replace(/^[\s\-•*]+/, '').trim())
+    .filter(s => s.length >= 35 && s.length <= 280);
+
+  if (!sections.responsibilities.length) {
+    for (const sentence of sentenceCandidates) {
+      if (/\b(own|lead|manage|drive|partner|deliver|develop|support|advise|build|execute|collaborate|work with|responsible for)\b/i.test(sentence)) {
+        appendSectionItem(sections, 'responsibilities', sentence);
+        if (sections.responsibilities.length >= 6) break;
+      }
+    }
+  }
+
+  if (!sections.requirements.length) {
+    for (const sentence of sentenceCandidates) {
+      if (/\b(required|requirement|must|need|years? of|experience (?:with|in)|proven|ability to|familiarity with|knowledge of|proficiency|background in|you have|you bring)\b/i.test(sentence)) {
+        appendSectionItem(sections, 'requirements', sentence);
+        if (sections.requirements.length >= 6) break;
+      }
+    }
+  }
+
+  return sections;
+}
+
+export function parseSections($, container) {
   const result = { responsibilities: [], requirements: [], qualifications: [], benefits: [] };
   let current = null;
 
@@ -158,16 +271,20 @@ function parseSections($, container) {
 
     if (tag === 'ul' || tag === 'ol') {
       el.find('li').each((_, li) => {
-        const text = $(li).text().trim();
-        if (text) result[current].push(text);
+        appendSectionItem(result, current, $(li).text());
       });
     } else if (tag === 'p') {
-      const text = el.text().trim();
-      if (text) result[current].push(text);
+      appendSectionItem(result, current, el.text());
     }
   });
 
-  return result;
+  const text = blockText($, container);
+  const fallback = parseSectionsFromText(text);
+  for (const section of Object.keys(result)) {
+    for (const item of fallback[section]) appendSectionItem(result, section, item);
+  }
+
+  return inferMissingSectionsFromText(result, text);
 }
 
 function extractCompensation(text) {
@@ -234,7 +351,15 @@ function logFieldStatus(job) {
   }
 }
 
-function parseDetail(html, id) {
+function firstExisting($, selectors) {
+  for (const selector of selectors) {
+    const found = $(selector).first();
+    if (found.length) return found;
+  }
+  return $('body').first();
+}
+
+export function parseDetail(html, id) {
   const $ = cheerioLoad(html);
 
   const title =
@@ -271,15 +396,17 @@ function parseDetail(html, id) {
     criteriaText('.description__job-criteria-item:contains("Industries")') || '';
 
   // Structured sections from description
-  const descContainer =
-    $('.description__text .show-more-less-html__markup').first() ||
-    $('.show-more-less-html__markup').first() ||
-    $('.description__text').first();
+  const descContainer = firstExisting($, [
+    '.description__text .show-more-less-html__markup',
+    '.show-more-less-html__markup',
+    '.description__text',
+    '[class*="description"]',
+  ]);
 
   const sections = parseSections($, descContainer);
 
   const fullDesc =
-    descContainer.text().trim() ||
+    blockText($, descContainer) ||
     $('[class*="description"]').first().text().trim();
 
   const compensation = extractCompensation(fullDesc);
@@ -350,51 +477,53 @@ function buildTitleFilter(titleFilter) {
   };
 }
 
-// ── LM Studio scoring ────────────────────────────────────────────────
+// ── Job scoring ──────────────────────────────────────────────────────
 
-const LM_STUDIO_URL = 'http://localhost:1234/v1/chat/completions';
-const LM_MODEL      = getLmStudioAnalysisModel();
-
-// Compact profile — keep under 100 tokens to fit 4096-token model context
-const PROFILE_SUMMARY = `CANDIDATE: Brian Milhizer | 22yr cybersecurity CSM | NDR/SIEM/XDR/EDR/IAM
-ROLES: Strategic CSM, Director/VP CS, SE, TAM | LOCATION: DFW or remote only
-COMP: $165K–$220K floor | CEH, Gainsight, Salesforce, SOAR
-DEAL-BREAKERS (score<=1.5): <$165K comp, on-site outside DFW, no cyber relevance, pure sales (AE)
-BOOSTS: post-2020 company+0.5, <1000 employees+0.5
-SCALE: 5=perfect(cyber+comp+role) 4=strong 3=moderate 2=weak 1=poor`;
-
-function buildScorePrompt(job) {
-  // Build a compact JD block — strip non-ASCII, cap at 800 chars
-  const rawDesc = [
-    job.responsibilities?.slice(0, 3).join(' '),
-    job.requirements?.slice(0, 3).join(' '),
-    job.description || '',
-  ].filter(Boolean).join(' ');
-
-  const safeDesc = rawDesc
-    .replace(/[^\x00-\x7F]/g, ' ')
-    .replace(/\s+/g, ' ')
-    .trim()
-    .slice(0, 800);
-
-  return `Score this job for the candidate. Return ONLY valid JSON, no markdown.
-${PROFILE_SUMMARY}
----
-Title: ${job.title}
-Company: ${job.company}
-Location: ${job.location || 'N/A'}
-Comp: ${job.compensation || 'N/A'}
-JD: ${safeDesc}
----
-JSON (all fields required):
-{"score":<1.0-5.0>,"score_analysis":"2 sentences","role_summary":"1 sentence","gaps":["gap1"],"strategic_positioning":"1 sentence","legitimacy_check":"legitimate or suspicious","cv_match_table":[{"req":"req","evidence":"evidence or N/A","strength":"Strong|Moderate|Weak|Gap"}]}`;
+function preferClaudeEvaluation() {
+  return (process.env.PREFER_CLAUDE_EVALUATION ?? process.env.PREFER_CLAUDE_SYNTHESIS ?? '1') !== '0';
 }
 
-function parseScoreResponse(raw) {
-  const clean = raw.replace(/^```(?:json)?\s*/im, '').replace(/\s*```\s*$/m, '').trim();
-  const match = clean.match(/\{[\s\S]*\}/);
-  if (!match) throw new Error('No JSON object in response');
-  const p = JSON.parse(match[0]);
+async function isLmStudioAvailable() {
+  try {
+    const res = await fetch('http://localhost:1234/v1/models', {
+      signal: AbortSignal.timeout(1500),
+    });
+    return res.ok;
+  } catch {
+    return false;
+  }
+}
+
+async function buildScoringState() {
+  const state = {
+    preferClaude: preferClaudeEvaluation(),
+    claudeEnabled: false,
+    lmStudioEnabled: false,
+    warnedUnavailable: false,
+  };
+
+  if (state.preferClaude) {
+    state.claudeEnabled = Boolean(process.env.ANTHROPIC_API_KEY);
+    if (state.claudeEnabled) {
+      process.stdout.write('Scoring: Claude enabled');
+    } else {
+      process.stdout.write('Scoring: Claude disabled (ANTHROPIC_API_KEY not set)');
+    }
+  }
+
+  state.lmStudioEnabled = await isLmStudioAvailable();
+  if (state.lmStudioEnabled) {
+    process.stdout.write(`${state.preferClaude ? '; ' : 'Scoring: '}LM Studio fallback available\n`);
+  } else if (state.preferClaude) {
+    process.stdout.write('; LM Studio fallback unavailable\n');
+  } else {
+    process.stdout.write('Scoring: LM Studio unavailable\n');
+  }
+
+  return state;
+}
+
+function normalizeScoreResponse(p) {
   if (typeof p.score !== 'number') throw new Error('Missing numeric score');
   p.score = Math.min(5.0, Math.max(0.0, parseFloat(p.score.toFixed(1))));
   // Normalise field names to match evaluate.mjs schema
@@ -407,31 +536,60 @@ function parseScoreResponse(raw) {
   return p;
 }
 
-async function scoreWithLMStudio(job) {
-  const prompt = buildScorePrompt(job);
-  process.stdout.write(`(prompt: ${prompt.length} chars) `);
-  try {
-    const res = await fetch(LM_STUDIO_URL, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        model:       LM_MODEL,
-        messages: [{ role: 'user', content: prompt }],
-        temperature: 0.15,
-        max_tokens:  900,
-        num_ctx:     16384,
-        stream:      false,
-      }),
-      signal: AbortSignal.timeout(120_000),
-    });
-    if (!res.ok) {
-      const body = await res.text().catch(() => '');
-      throw new Error(`LM Studio HTTP ${res.status}: ${body.slice(0, 120)}`);
+function canAttemptScoring(scoringState) {
+  return scoringState.claudeEnabled || scoringState.lmStudioEnabled;
+}
+
+async function scoreLinkedInJob(job, scoringState) {
+  if (!canAttemptScoring(scoringState)) {
+    if (!scoringState.warnedUnavailable) {
+      process.stdout.write('(scoring engines unavailable; leaving scores blank) ');
+      scoringState.warnedUnavailable = true;
     }
-    const data = await res.json();
-    return parseScoreResponse(data.choices?.[0]?.message?.content?.trim() || '');
+    return null;
+  }
+
+  const item = {
+    url:     job.url || '',
+    company: job.company || '',
+    title:   job.title || '',
+    source:  job.source || 'linkedin-guest-api',
+  };
+  const details = {
+    title:        job.title || '',
+    company:      job.company || '',
+    location:     job.location || '',
+    description:  [
+      job.responsibilities?.join('\n'),
+      job.requirements?.join('\n'),
+      job.description || '',
+    ].filter(Boolean).join('\n\n'),
+    compensation: job.compensation || '',
+  };
+  const log = (stage, message) => {
+    if (stage === 'evaluate' && message.startsWith('prompt:')) {
+      process.stdout.write(`(${message}) `);
+    }
+  };
+
+  if (scoringState.claudeEnabled) {
+    try {
+      return normalizeScoreResponse(await scoreWithClaude(item, details, log));
+    } catch (err) {
+      scoringState.claudeEnabled = false;
+      const suffix = scoringState.lmStudioEnabled ? '; trying LM Studio… ' : '; scoring disabled for this run. ';
+      process.stdout.write(`Claude error: ${err.message}${suffix}`);
+    }
+  }
+
+  if (!scoringState.lmStudioEnabled) return null;
+
+  try {
+    getLmStudioAnalysisModel();
+    return normalizeScoreResponse(await scoreWithLmStudio(item, details, log));
   } catch (err) {
-    process.stdout.write(`ERROR: ${err.message}\n`);
+    scoringState.lmStudioEnabled = false;
+    process.stdout.write(`LM Studio error: ${err.message}; scoring disabled for this run.\n`);
     return null;
   }
 }
@@ -567,6 +725,8 @@ async function main() {
 
   if (dryRun) console.log('(dry run — no files will be written)\n');
 
+  const scoringState = await buildScoringState();
+
   let totalFound        = 0;
   let totalFiltered     = 0;
   let totalDupes        = 0;
@@ -592,6 +752,7 @@ async function main() {
       const html = await fetchText(searchUrl);
       ids        = parseJobIds(html);
       console.log(`  ${ids.length} job IDs found`);
+      totalFound += ids.length;
     } catch (e) {
       errors.push({ search: search.keywords, error: e.message });
       console.error(`  ! Search failed: ${e.message}`);
@@ -600,12 +761,11 @@ async function main() {
 
     let fetched = 0;
     for (const id of ids) {
-      totalFound++;
-
       if (seenIds.has(id)) { totalDupes++; continue; }
       seenIds.add(id);
 
       if (fetched >= maxDetail) break;
+      fetched++;
 
       await randomDelay();
 
@@ -631,7 +791,7 @@ async function main() {
         }
 
         process.stdout.write(`  + ${job.company} | ${job.title}`);
-        const scored = await scoreWithLMStudio(job);
+        const scored = await scoreLinkedInJob(job, scoringState);
         if (scored) {
           job._score  = scored.score;
           job._report = scored;
@@ -640,7 +800,6 @@ async function main() {
           process.stdout.write(` — (scoring unavailable)\n`);
         }
         newJobs.push(job);
-        fetched++;
       } catch (e) {
         errors.push({ id, error: e.message });
         console.error(`  ! Detail failed for ${id}: ${e.message}`);
@@ -681,6 +840,11 @@ async function main() {
       console.log('\n' + label);
 
       for (const key of toScore) {
+        if (!canAttemptScoring(scoringState)) {
+          process.stdout.write('  Scoring engines unavailable — skipping remaining backfill entries.\n');
+          break;
+        }
+
         const entry = tracker[key];
 
         // Re-fetch detail page if we only have the 600-char preview (fixes truncation)
@@ -721,7 +885,7 @@ async function main() {
 
         const prev = tracker[key].score !== undefined ? ` (was ${tracker[key].score}/5)` : '';
         process.stdout.write(`  ${stub.company} | ${stub.title}${prev}…`);
-        const scored = await scoreWithLMStudio(stub);
+        const scored = await scoreLinkedInJob(stub, scoringState);
         if (scored) {
           tracker[key].score         = scored.score;
           tracker[key].score_analysis = scored.score_analysis || scored.role_summary || '';
@@ -775,7 +939,9 @@ async function main() {
   console.log('→ No browser used — pure HTTP + Cheerio.');
 }
 
-main().catch(err => {
-  console.error('Fatal:', err.message);
-  process.exit(1);
-});
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  main().catch(err => {
+    console.error('Fatal:', err.message);
+    process.exit(1);
+  });
+}

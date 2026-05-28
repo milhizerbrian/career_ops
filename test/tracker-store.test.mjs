@@ -60,6 +60,30 @@ describe('tracker-store', () => {
     });
   });
 
+  it('updateJobWithPrevious returns previous/current jobs and preserves generatedDocs', () => {
+    const generatedDocs = {
+      default: { docxUrl: '/output/a.docx', generatedAt: '2026-05-01T00:00:00.000Z' },
+    };
+    const { store } = tempStore({
+      a: baseJob({ status: 'lead', generatedDocs }),
+    });
+
+    const result = store.updateJobWithPrevious('a', (job, previous) => {
+      assert.equal(previous.status, 'lead');
+      return {
+        company: job.company,
+        title: job.title,
+        status: 'applied',
+      };
+    });
+
+    assert.equal(result.previous.status, 'lead');
+    assert.equal(result.updated.id, 'a');
+    assert.equal(result.updated.status, 'applied');
+    assert.deepEqual(result.updated.generatedDocs, generatedDocs);
+    assert.deepEqual(store.loadTracker().a.generatedDocs, generatedDocs);
+  });
+
   it('accepts old generatedDocs entries without PDF metadata', () => {
     const oldGeneratedDocs = {
       default: {

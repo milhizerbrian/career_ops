@@ -25,6 +25,7 @@ import {
   flattenDynamicResumeDraft,
   generateResumeFinish,
   inferResumePositioningMode,
+  lowestPrioritySelectedBullet,
   planningContextText,
   rescueQualityUntilStable,
   sanitizeResumeLanguage,
@@ -143,6 +144,24 @@ describe('validateResumeQuality', () => {
     }
   });
 
+  it('rejects key achievements without measurable scale or portfolio proof', () => {
+    assert.throws(
+      () => validateResumeQuality({
+        KEY_ACHIEVEMENT_1: 'Improved onboarding discipline through better stakeholder alignment and repeatable customer success operating rhythms.',
+      }, ['KEY_ACHIEVEMENT_1']),
+      /achievement lacks a measurable result/
+    );
+  });
+
+  it('rejects copyable generic claims without a specific system or customer motion', () => {
+    assert.throws(
+      () => validateResumeQuality({
+        JOB_1_BULLET_1: 'Improved adoption across enterprise cybersecurity accounts by aligning CISO stakeholders and preserving 98% retention through executive engagement.',
+      }, ['JOB_1_BULLET_1']),
+      /copyable claim/
+    );
+  });
+
   it('sanitizes banned wording after model repair output', () => {
     const value = sanitizeResumeLanguage(
       'Responsible for customer outcomes — provided support and managed relationships to leverage synergy.'
@@ -151,6 +170,32 @@ describe('validateResumeQuality', () => {
     assert.doesNotMatch(value, /Responsible for|—|provided support|managed relationships|leverage|synergy/i);
     assert.match(value, /Owned/);
     assert.match(value, /resolved execution gaps/);
+  });
+
+  it('scrubs generated filler clauses and unsupported customer-SOC AI scope', () => {
+    const value = sanitizeResumeLanguage(
+      'Deployed AI workflow automation inside customer SOC environments to reduce repetitive manual analyst tasks, for enterprise security stakeholders through documented deployment criteria and measurable security outcomes.'
+    );
+
+    assert.doesNotMatch(value, /for enterprise security stakeholders through documented deployment criteria/i);
+    assert.doesNotMatch(value, /Deployed AI workflow automation inside customer SOC environments/i);
+    assert.match(value, /Built AI workflow automation/);
+  });
+
+  it('rejects generated filler clauses and unsupported customer-SOC AI claims', () => {
+    assert.throws(
+      () => validateResumeQuality({
+        JOB_1_BULLET_1: 'Deployed AI workflow automation inside customer SOC environments to reduce repetitive manual analyst tasks across a $23M enterprise portfolio, improving adoption and preserving 98% retention through executive alignment.',
+      }, ['JOB_1_BULLET_1']),
+      /unsupported AI customer-SOC deployment claim/
+    );
+
+    assert.throws(
+      () => validateResumeQuality({
+        JOB_1_BULLET_1: 'Aligned renewal strategy across a $23M portfolio with CISO stakeholders and 98% retention, for enterprise security stakeholders through documented deployment criteria and measurable security outcomes.',
+      }, ['JOB_1_BULLET_1']),
+      /generated security-stakeholder filler artifact/
+    );
   });
 
   it('rejects banned support-first phrasing even when a bullet has proof', () => {
@@ -271,6 +316,24 @@ describe('quality rescue', () => {
     assert.equal(validateResumeQuality(rescued, ['JOB_1_BULLET_2']), true);
     assert.match(rescued.JOB_1_BULLET_2, /enterprise/i);
   });
+
+  it('rescues unquantified key achievements with portfolio proof', () => {
+    const rescued = rescueQualityUntilStable({
+      KEY_ACHIEVEMENT_1: 'Improved onboarding discipline through better stakeholder alignment and repeatable customer success operating rhythms.',
+    }, ['KEY_ACHIEVEMENT_1']);
+
+    assert.equal(validateResumeQuality(rescued, ['KEY_ACHIEVEMENT_1']), true);
+    assert.match(rescued.KEY_ACHIEVEMENT_1, /enterprise portfolios/);
+  });
+
+  it('rescues copyable claims with workflow or governance proof', () => {
+    const rescued = rescueQualityUntilStable({
+      JOB_1_BULLET_1: 'Improved adoption across enterprise cybersecurity accounts by aligning CISO stakeholders and preserving 98% retention through executive engagement.',
+    }, ['JOB_1_BULLET_1']);
+
+    assert.equal(validateResumeQuality(rescued, ['JOB_1_BULLET_1']), true);
+    assert.match(rescued.JOB_1_BULLET_1, /workflow governance|operating cadence|account planning workflows/);
+  });
 });
 
 describe('rendered resume layout', () => {
@@ -297,7 +360,15 @@ describe('rendered resume layout', () => {
     }, ['JOB_3_BULLET_3']);
 
     assert.equal(validateResumeQuality(repaired, ['JOB_3_BULLET_3']), true);
-    assert.match(repaired.JOB_3_BULLET_3, /enterprise cybersecurity stakeholders/);
+    assert.doesNotMatch(repaired.JOB_3_BULLET_3, /enterprise cybersecurity stakeholders using documented deployment criteria/);
+    assert.match(repaired.JOB_3_BULLET_3, /enterprise customer environments|measurable customer outcomes/);
+  });
+
+  it('treats overly dense two-page renders as overflow to preserve Word pagination buffer', () => {
+    assert.equal(classifyResumeLayout({
+      pageCount: 2,
+      pages: [{ fillRatio: 0.95, wordCount: 520 }, { fillRatio: 0.91, wordCount: 515 }],
+    }).status, 'overflow');
   });
 
   it('applies stricter overflow budgets on later fit attempts', () => {
@@ -579,6 +650,26 @@ describe('active resume prompts', () => {
     assert.match(source, /Do not over-compress useful detail|do not over-compress useful detail/);
   });
 
+  it('carries the five resume improvement principles into active prompts and section planning', () => {
+    assert.match(source, /Lead with measurable results/);
+    assert.match(source, /Tailor to the exact JD/);
+    assert.match(source, /Strengthen the top third/);
+    assert.match(source, /Write clear impact bullets/);
+    assert.match(source, /Remove clutter/);
+    assert.match(source, /RESUME IMPROVEMENT CHECKLIST/);
+    assert.match(source, /UNIVERSAL RESUME IMPROVEMENT STANDARD/);
+  });
+
+  it('carries top-1% applicant principles into active prompts and section planning', () => {
+    assert.match(source, /Increase evidence density/);
+    assert.match(source, /Show judgment, not activity/);
+    assert.match(source, /Match the role business model/);
+    assert.match(source, /Make accomplishments hard to copy/);
+    assert.match(source, /final hiring-manager rejection lens/);
+    assert.match(source, /TOP-1% APPLICANT CHECKLIST/);
+    assert.match(source, /TOP-1% APPLICANT STANDARD/);
+  });
+
   it('detects pre-sales solution architecture roles from JD language', () => {
     const jd = [
       'Senior Client Solutions Engineer',
@@ -714,6 +805,28 @@ describe('active resume prompts', () => {
     assert.equal(classifyResumeRole(jd), 'strategic-cs-leadership');
   });
 
+  it('detects Nebulock-style startup CSM builder roles before generic CS', () => {
+    const jd = [
+      'Customer Success Manager at a fast-paced cybersecurity startup.',
+      'Own process design and implementation by designing, building, and iterating scalable onboarding workflows and customer support processes from the ground up.',
+      'Use AI-driven efficiency with ChatGPT, Claude, or Gemini, serve as Voice of the Customer, act as the internal quarterback across Product, Engineering, Sales, and Marketing, and lead onsite Strategic Business Reviews and security workshops.',
+      'The platform focuses on threat hunting, behavioral detections, endpoint telemetry, identity telemetry, cloud telemetry, credential misuse, lateral movement, and post-access activity.',
+    ].join('\n');
+
+    assert.equal(classifyResumeRole(jd), 'startup-cs-builder');
+  });
+
+  it('detects Hakimo-style commercial startup CSM roles separately from cybersecurity builder roles', () => {
+    const jd = [
+      'Customer Success Manager at an AI-powered physical security startup.',
+      'Own three KPIs across a book of business: expansion, retention, and churn save.',
+      'Partner with AEs on shared accounts, renewal motions, expansion strategy, account planning, and Pipedrive opportunity hygiene.',
+      'Build rather than inherit playbooks in a fast-paced environment with ops, facilities, security chiefs, and IT stakeholders.',
+    ].join('\n');
+
+    assert.equal(classifyResumeRole(jd), 'startup-commercial-cs-builder');
+  });
+
   it('keeps technical CSM roles with onboarding discovery out of pre-sales mode', () => {
     const jd = [
       'Technical Customer Success Manager',
@@ -764,6 +877,45 @@ describe('active resume prompts', () => {
     assert.equal(labels.includes('company'), false);
   });
 
+  it('extracts startup CSM builder and threat-hunting requirements', () => {
+    const requirements = extractJobRequirements(
+      [
+        'Build from the ground up with process design, scalable onboarding workflows, customer support processes, AI-driven efficiency, and Generative AI tools such as ChatGPT, Claude, or Gemini.',
+        'Act as Voice of the Customer with Product and Engineering, partner with Sales on handoffs and expansion, work with Marketing on power users, case studies, and testimonials.',
+        'Support threat hunting, behavioral detections, endpoint telemetry, identity telemetry, cloud telemetry, credential misuse, lateral movement, and post-access activity.',
+      ].join(' '),
+      ''
+    );
+    const labels = requirements.map(item => item.requirement);
+
+    assert.ok(labels.includes('startup CS function building'));
+    assert.ok(labels.includes('process design and implementation'));
+    assert.ok(labels.includes('AI-driven workflow efficiency'));
+    assert.ok(labels.includes('voice of customer product alignment'));
+    assert.ok(labels.includes('marketing advocacy and case studies'));
+    assert.ok(labels.includes('threat hunting and behavioral detection'));
+    assert.ok(labels.includes('endpoint identity cloud telemetry'));
+    assert.ok(labels.includes('credential misuse and lateral movement'));
+  });
+
+  it('extracts commercial startup CSM requirements for physical-security adjacency', () => {
+    const requirements = extractJobRequirements(
+      [
+        'Own a book of business across expansion, retention, and churn save.',
+        'Partner with Account Executives on shared accounts, joint planning, renewal motions, expansion strategy, and Pipedrive expansion opportunities.',
+        'Build rather than inherit playbooks for AI-powered physical security, IoT, hardware-software, ops, security chiefs, and facilities leaders.',
+      ].join(' '),
+      ''
+    );
+    const labels = requirements.map(item => item.requirement);
+
+    assert.ok(labels.includes('commercial CSM KPI ownership'));
+    assert.ok(labels.includes('AE partnership and account planning'));
+    assert.ok(labels.includes('CRM opportunity hygiene'));
+    assert.ok(labels.includes('physical security and IoT adjacency'));
+    assert.ok(labels.includes('startup CS playbook building'));
+  });
+
   it('plans MSP compliance delivery sections around execution before SaaS expansion', () => {
     const requirements = extractJobRequirements(
       'Managed services Director owning service delivery, compliance program delivery, onboarding project management, corrective action plans, technology rollouts, dashboards, and team accountability.',
@@ -797,6 +949,51 @@ describe('active resume prompts', () => {
     assert.match(plan.summaryThesis, /customer outcomes leader/i);
     assert.match(plan.toolsPlatformsDirective, /customer-success competency list/i);
     assert.ok(plan.downrankVocabulary.includes('SIEM'));
+  });
+
+  it('plans startup CSM builder sections around Total Trial, AI workflow, and threat hunting', () => {
+    const requirements = extractJobRequirements(
+      'Customer Success Manager in a high-growth startup owning process design, scalable onboarding workflows, AI-driven efficiency, Voice of Customer, Strategic Business Reviews, threat hunting, behavioral detection, and endpoint identity cloud telemetry.',
+      ''
+    );
+    const evidenceMap = buildEvidenceMap(
+      requirements,
+      'Total Trial Services built CS function across 87 clients with 8 direct reports and 22% retention improvement. ExtraHop NDR AI workflow automation and Securonix SIEM onboarding reduction.'
+    );
+    const plan = buildResumeSectionPlan({
+      roleMode: 'startup-cs-builder',
+      requirements,
+      evidenceMap,
+    });
+
+    assert.match(plan.taglineDirective, /Customer Success Manager|startup CS builder/i);
+    assert.match(plan.summaryThesis, /onboarding|support|escalation/i);
+    assert.match(plan.toolsPlatformsDirective, /AI-Assisted Documentation|Threat Hunting/i);
+    assert.ok(plan.emphasizeBullets.some(item => /Total Trial Services/i.test(item)));
+    assert.ok(plan.downrankVocabulary.some(item => /Director-level/i.test(item)));
+  });
+
+  it('plans commercial startup CSM sections around builder proof, churn save, and AE partnership', () => {
+    const requirements = extractJobRequirements(
+      'Customer Success Manager owning expansion, retention, churn save, account planning, renewal motions, Pipedrive hygiene, startup playbook building, physical security, IoT, and ops stakeholders.',
+      ''
+    );
+    const evidenceMap = buildEvidenceMap(
+      requirements,
+      'Total Trial Services built CS function across 87 clients with 8 direct reports and 22% retention improvement. Securonix retained three at-risk accounts, 100% renewal, 30% onboarding reduction, and 81% ARR expansion. ExtraHop partnered with sales on renewal strategy.'
+    );
+    const plan = buildResumeSectionPlan({
+      roleMode: 'startup-commercial-cs-builder',
+      requirements,
+      evidenceMap,
+    });
+
+    assert.match(plan.taglineDirective, /commercial ownership|AE partnership|physical-security/i);
+    assert.match(plan.summaryThesis, /renewal and expansion|AEs/i);
+    assert.match(plan.toolsPlatformsDirective, /Pipedrive|Churn Save|Physical Security/i);
+    assert.ok(plan.emphasizeBullets.some(item => /Total Trial Services/i.test(item)));
+    assert.ok(plan.emphasizeBullets.some(item => /Securonix/i.test(item)));
+    assert.ok(plan.downrankVocabulary.some(item => /direct physical security/i.test(item)));
   });
 
   it('critiques SaaS expansion framing in MSP compliance delivery drafts', () => {
@@ -834,6 +1031,149 @@ describe('active resume prompts', () => {
     assert.ok(issues.some(issue => issue.code === 'overtechnical-strategic-cs-bullet'));
   });
 
+  it('critiques startup CSM drafts that bury builder proof, AI fluency, or threat-hunting domain', () => {
+    const planningContext = buildResumePlanningContext(
+      'Customer Success Manager at a fast-paced cybersecurity startup building process design, scalable onboarding workflows, AI-driven efficiency, Voice of Customer, onsite Strategic Business Reviews, threat hunting, behavioral detections, endpoint identity cloud telemetry, credential misuse, lateral movement, and post-access activity.',
+      '',
+      'Total Trial Services built CS function across 87 clients with 8 direct reports and 22% retention improvement. ExtraHop NDR AI workflow automation and Securonix SIEM onboarding reduction.'
+    );
+    const issues = critiqueResumeDraft({
+      TITLE_LINE: 'Strategic Customer Success Manager | Enterprise Accounts',
+      PROFESSIONAL_SUMMARY: 'Customer Success leader managing relationships across large enterprise accounts with retention ownership and broad stakeholder engagement.',
+      CORE_COMPETENCIES: 'Customer success, QBRs, renewals, account management',
+      KEY_ACHIEVEMENT_1: 'Maintained strong retention across enterprise security accounts through customer planning.',
+    }, planningContext);
+
+    assert.ok(issues.some(issue => issue.code === 'missing-startup-builder-positioning'));
+    assert.ok(issues.some(issue => issue.code === 'missing-threat-hunting-domain'));
+    assert.ok(issues.some(issue => issue.code === 'missing-total-trial-builder-proof'));
+    assert.ok(issues.some(issue => issue.code === 'missing-ai-fluency'));
+  });
+
+  it('critiques Hakimo-style drafts that miss commercial ownership, builder proof, or churn-save proof', () => {
+    const planningContext = buildResumePlanningContext(
+      'Customer Success Manager at an AI-powered physical security startup owning expansion, retention, churn save, AE partnership, account planning, renewal motions, Pipedrive, and no fully established playbooks.',
+      '',
+      'Total Trial Services built CS function across 87 clients with 8 direct reports and 22% retention improvement. Securonix retained three at-risk accounts, 100% renewal, 30% onboarding reduction, and 81% ARR expansion.'
+    );
+    const issues = critiqueResumeDraft({
+      TITLE_LINE: 'Strategic Customer Success Manager | Enterprise Cybersecurity',
+      PROFESSIONAL_SUMMARY: 'Cybersecurity customer success leader focused on security platform adoption and enterprise stakeholders.',
+      CORE_COMPETENCIES: 'NDR, SIEM, IAM, SOC workflows',
+      KEY_ACHIEVEMENT_1: 'Maintained adoption across enterprise security accounts.',
+    }, planningContext);
+
+    assert.equal(planningContext.roleMode, 'startup-commercial-cs-builder');
+    assert.ok(issues.some(issue => issue.code === 'missing-commercial-startup-positioning'));
+    assert.ok(issues.some(issue => issue.code === 'missing-physical-security-iot-bridge'));
+    assert.ok(issues.some(issue => issue.code === 'missing-total-trial-builder-proof'));
+    assert.ok(issues.some(issue => issue.code === 'missing-securonix-churn-save-proof'));
+  });
+
+  it('critiques generic commercial CSM drafts that miss NRR, demos, health checks, or mentorship', () => {
+    const planningContext = buildResumePlanningContext(
+      [
+        'Customer Success Manager managing a portfolio of 30-40 named accounts.',
+        'Own Net Revenue Retention quota, upsells, cross-sells, renewals, executive business reviews, health checks, risk action plans, escalations, demonstrations to CISOs, and mentorship for developing CSMs.',
+        'The platform is AI cybersecurity across network, cloud, and email.',
+      ].join(' '),
+      '',
+      'Managed $23M ARR and $55M ARR portfolios with NRR, renewals, CISO demos, health checks, escalations, and team standards.'
+    );
+    const issues = critiqueResumeDraft({
+      TITLE_LINE: 'Enterprise Customer Success Manager',
+      METRICS_LINE: '22+ Years Enterprise SaaS',
+      PROFESSIONAL_SUMMARY: 'Customer Success leader managing relationships across enterprise accounts with adoption planning and stakeholder engagement.',
+      CORE_COMPETENCIES: 'Customer success, adoption, stakeholder engagement',
+      KEY_ACHIEVEMENT_1: 'Improved customer outcomes across enterprise accounts.',
+    }, planningContext);
+
+    assert.equal(planningContext.roleMode, 'customer-success');
+    assert.ok(issues.some(issue => issue.code === 'missing-named-account-portfolio-frame'));
+    assert.ok(issues.some(issue => issue.code === 'missing-commercial-cs-ownership'));
+    assert.ok(issues.some(issue => issue.code === 'missing-executive-demo-health-cadence'));
+    assert.ok(issues.some(issue => issue.code === 'missing-csm-mentorship'));
+  });
+
+  it('critiques and repairs weak above-fold proof', () => {
+    const planningContext = buildResumePlanningContext(
+      'Customer Success Manager owning retention, renewal execution, executive business reviews, and account planning.',
+      '',
+      'Managed enterprise portfolios with retention and renewal outcomes.'
+    );
+    const draft = {
+      TITLE_LINE: 'Enterprise Customer Success Manager',
+      METRICS_LINE: '22+ Years Enterprise SaaS',
+      PROFESSIONAL_SUMMARY: 'Customer Success leader focused on adoption, executive alignment, and customer outcomes across complex SaaS environments.',
+      KEY_ACHIEVEMENT_1: 'Improved onboarding discipline through better stakeholder alignment and repeatable customer success operating rhythms.',
+    };
+    const issues = critiqueResumeDraft(draft, planningContext);
+    const repaired = applyDeterministicStrategicRepairs(draft, [
+      'TITLE_LINE',
+      'METRICS_LINE',
+      'PROFESSIONAL_SUMMARY',
+      'KEY_ACHIEVEMENT_1',
+    ], {
+      jdText: planningContext.jdText,
+      planningContext,
+    });
+
+    assert.ok(issues.some(issue => issue.code === 'weak-above-fold-proof'));
+    assert.match(repaired.METRICS_LINE, /\$55M ARR Portfolio \(Peak\)/);
+  });
+
+  it('critiques above-fold sections that miss the target role business model', () => {
+    const planningContext = buildResumePlanningContext(
+      'Senior Sales Engineer owning pre-sales discovery, solution architecture, demos, POC success criteria, and technical business cases.',
+      '',
+      'ExtraHop NDR architecture and Securonix SIEM advisory for enterprise security stakeholders.'
+    );
+    const issues = critiqueResumeDraft({
+      TITLE_LINE: 'Enterprise Technical Advisor',
+      METRICS_LINE: '$55M ARR Portfolio (Peak)',
+      PROFESSIONAL_SUMMARY: 'Enterprise technical leader with cybersecurity depth across complex customer environments and executive stakeholder alignment.',
+      CORE_COMPETENCIES: 'Security Platforms: ExtraHop NDR, Securonix SIEM',
+      KEY_ACHIEVEMENT_1: 'Led $13M enterprise renewal at ExtraHop while expanding account value 122% through security maturity and adoption planning.',
+    }, planningContext);
+
+    assert.equal(planningContext.roleMode, 'pre-sales-solutions-architecture');
+    assert.ok(issues.some(issue => issue.code === 'missing-role-business-model-signal'));
+  });
+
+  it('applies generic commercial CSM repairs without copying target account ranges', () => {
+    const repaired = applyDeterministicStrategicRepairs({
+      TITLE_LINE: 'Enterprise Customer Success Manager',
+      METRICS_LINE: '22+ Years Enterprise SaaS',
+      PROFESSIONAL_SUMMARY: 'Customer Success leader managing relationships across enterprise accounts.',
+      CORE_COMPETENCIES: 'Customer Success: Enterprise Portfolio Management (30-40 Named Accounts), adoption',
+      KEY_ACHIEVEMENT_4: 'Improved customer engagement workflows across enterprise accounts.',
+    }, ['TITLE_LINE', 'METRICS_LINE', 'PROFESSIONAL_SUMMARY', 'CORE_COMPETENCIES', 'KEY_ACHIEVEMENT_4'], {
+      jdText: 'Customer Success Manager owning NRR quota, upsells, cross-sells, renewals, executive business reviews, health checks, demonstrations to CISOs, and mentoring developing Customer Success Managers across a portfolio of 30-40 named accounts at an AI cybersecurity company.',
+      planningContext: { roleMode: 'customer-success', jdText: 'Customer Success Manager owning NRR quota, upsells, cross-sells, renewals, executive business reviews, health checks, demonstrations to CISOs, and mentoring developing Customer Success Managers across a portfolio of 30-40 named accounts at an AI cybersecurity company.' },
+    });
+    const sanitized = sanitizeResumeLanguage(repaired.CORE_COMPETENCIES);
+
+    assert.match(repaired.METRICS_LINE, /\$55M ARR Portfolio \(Peak\)/);
+    assert.match(repaired.PROFESSIONAL_SUMMARY, /NRR|upsell and cross-sell|CISO|health/i);
+    assert.match(repaired.CORE_COMPETENCIES, /CSM Mentorship|Solution Demonstrations|NRR \/ GRR Ownership/);
+    assert.doesNotMatch(sanitized, /30-40 Named Accounts/i);
+  });
+
+  it('protects generic commercial CSM proof from local page-fit bullet dropping', () => {
+    const planning = {
+      roleMode: 'customer-success',
+      jdText: 'Customer Success Manager owning NRR quota, upsells, renewals, executive business reviews, health checks, CISO demonstrations, and mentorship for developing CSMs.',
+      requirements: extractJobRequirements('NRR upsells renewals executive business reviews health checks CISO demonstrations mentorship', ''),
+    };
+    const drop = lowestPrioritySelectedBullet({
+      JOB_1_BULLET_1: 'Maintained account notes for enterprise customers through routine check-ins.',
+      JOB_1_BULLET_2: 'Sustained 120% NRR by converting QBR health signals into renewal, upsell, and cross-sell actions across enterprise cybersecurity accounts.',
+      JOB_2_BULLET_1: 'Mentored developing CSMs through best-practice sharing and repeatable escalation standards that improved team ramp and customer handoff consistency.',
+    }, planning);
+
+    assert.equal(drop.field, 'JOB_1_BULLET_1');
+  });
+
   it('uses business-outcome repairs for strategic CS leadership bullets', () => {
     const repaired = applyDeterministicQualityRepairs({
       JOB_1_BULLET_1: 'Advised stakeholders on program execution.',
@@ -844,6 +1184,61 @@ describe('active resume prompts', () => {
 
     assert.match(repaired.JOB_1_BULLET_1, /measurable business outcomes/);
     assert.doesNotMatch(repaired.JOB_1_BULLET_1, /enterprise cybersecurity stakeholders/);
+  });
+
+  it('applies deterministic Nebulock-style startup CSM repairs', () => {
+    const repaired = applyDeterministicStrategicRepairs({
+      TITLE_LINE: 'Strategic Customer Success Manager | Enterprise Accounts',
+      METRICS_LINE: '$55M ARR Portfolio (Peak) | 98-100% Retention',
+      PROFESSIONAL_SUMMARY: 'Cybersecurity customer success operator with 22+ years across NDR, SIEM, IAM, endpoint, identity, and cloud security. Builds systems, aligns stakeholders, and owns customer outcomes across enterprise accounts.',
+      CORE_COMPETENCIES: 'Customer Success: QBRs, renewals',
+      KEY_ACHIEVEMENT_4: 'Rebuilt customer engagement workflows across enterprise accounts.',
+    }, ['TITLE_LINE', 'METRICS_LINE', 'PROFESSIONAL_SUMMARY', 'CORE_COMPETENCIES', 'KEY_ACHIEVEMENT_4'], {
+      jdText: 'Customer Success Manager at a cybersecurity startup with process design, AI-driven efficiency, threat hunting, behavioral detection, endpoint identity cloud telemetry, and build from the ground up ownership.',
+      planningContext: { roleMode: 'startup-cs-builder' },
+    });
+
+    assert.match(repaired.TITLE_LINE, /Customer Success Manager|startup CS builder/i);
+    assert.match(repaired.METRICS_LINE, /87-Client CS Function Build/);
+    assert.match(repaired.METRICS_LINE, /22% Retention Lift/);
+    assert.match(repaired.PROFESSIONAL_SUMMARY, /Total Trial Services|87 clients|22%/);
+    assert.match(repaired.CORE_COMPETENCIES, /AI Workflow Automation/);
+    assert.match(repaired.CORE_COMPETENCIES, /Threat Hunting/);
+    assert.match(repaired.KEY_ACHIEVEMENT_4, /Total Trial Services|87 clients|22%/);
+  });
+
+  it('applies deterministic Hakimo-style commercial startup CSM repairs', () => {
+    const repaired = applyDeterministicStrategicRepairs({
+      TITLE_LINE: 'Strategic Customer Success Manager | Enterprise Accounts',
+      METRICS_LINE: '$55M ARR Portfolio (Peak) | 98-100% Retention',
+      PROFESSIONAL_SUMMARY: 'Customer success operator with enterprise security experience.',
+      CORE_COMPETENCIES: 'Customer Success: QBRs, renewals',
+      KEY_ACHIEVEMENT_3: 'Improved customer outcomes across enterprise accounts.',
+      KEY_ACHIEVEMENT_4: 'Built customer engagement workflows across enterprise accounts.',
+    }, ['TITLE_LINE', 'METRICS_LINE', 'PROFESSIONAL_SUMMARY', 'CORE_COMPETENCIES', 'KEY_ACHIEVEMENT_3', 'KEY_ACHIEVEMENT_4'], {
+      jdText: 'Customer Success Manager at a physical security startup owning expansion, retention, churn save, AE partnership, account planning, Pipedrive, and build rather than inherit playbooks.',
+      planningContext: { roleMode: 'startup-commercial-cs-builder' },
+    });
+
+    assert.match(repaired.TITLE_LINE, /Expansion|Retention|Churn Save|Physical Security/i);
+    assert.match(repaired.METRICS_LINE, /87-Client CS Function Build/);
+    assert.match(repaired.PROFESSIONAL_SUMMARY, /Total Trial Services|physical security|IoT/i);
+    assert.match(repaired.CORE_COMPETENCIES, /Pipedrive|AE Partnership|Physical Security/i);
+    assert.match(repaired.KEY_ACHIEVEMENT_3, /Securonix|100% renewal|30% onboarding|81% ARR/i);
+    assert.match(repaired.KEY_ACHIEVEMENT_4, /Total Trial Services|87 clients|22%/);
+  });
+
+  it('protects Total Trial and Securonix proof from local page-fit bullet dropping for commercial startup CSMs', () => {
+    const drop = lowestPrioritySelectedBullet({
+      JOB_1_BULLET_1: 'Maintained account notes for enterprise customers through routine check-ins.',
+      JOB_3_BULLET_1: 'Retained three at-risk Securonix accounts through churn-save escalation, sustained 100% renewal performance, cut onboarding 30%, and supported 81% ARR expansion.',
+      JOB_5_BULLET_1: 'Built the CS function at Total Trial Services across 87 clients and an 8-person team, improving retention 22% through onboarding consistency and escalation handling.',
+    }, {
+      roleMode: 'startup-commercial-cs-builder',
+      requirements: extractJobRequirements('expansion retention churn save book of business account planning Pipedrive physical security startup playbook building', ''),
+    });
+
+    assert.equal(drop.field, 'JOB_1_BULLET_1');
   });
 
   it('softens residual cybersecurity phrasing for strategic CS leadership drafts', () => {

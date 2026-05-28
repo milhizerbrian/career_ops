@@ -387,7 +387,7 @@ async function harvestSearchIds(page, searches, pages) {
     process.stdout.write(`\nSearching (browser): ${search.keywords}\n`);
     for (const url of urls) {
       try {
-        await page.goto(url, { timeout: 45_000 });
+        await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 45_000 });
         await sleep(2000); // allow React to render job cards
         const html    = await page.content();
         const pageIds = scrapePageIds(html);
@@ -410,7 +410,7 @@ async function harvestSavedIds(page) {
   const url = buildSavedJobsUrl();
   process.stdout.write('\nFetching saved jobs…\n');
   try {
-    await page.goto(url, { timeout: 45_000 });
+    await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 45_000 });
     // Scroll 5× to trigger lazy-loading of all saved jobs
     for (let i = 0; i < 5; i++) {
       await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
@@ -434,7 +434,7 @@ async function harvestRecommendedIds(page, pages) {
   const url = buildRecommendedUrl();
   process.stdout.write('\nFetching recommended jobs…\n');
   try {
-    await page.goto(url, { timeout: 45_000 });
+    await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 45_000 });
     await sleep(2000); // initial render before scrolling
     // Each "page" is ~25 items; 3 scrolls per page is enough to trigger lazy loading
     const scrollRounds = pages * 3;
@@ -460,7 +460,7 @@ async function harvestUnicornIds(page, pages) {
   const url = buildUnicornUrl();
   process.stdout.write('\nFetching unicorn company jobs…\n');
   try {
-    await page.goto(url, { timeout: 45_000 });
+    await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 45_000 });
     await sleep(2000); // initial render before scrolling
     const scrollRounds = pages * 3;
     for (let i = 0; i < scrollRounds; i++) {
@@ -532,7 +532,7 @@ async function main() {
     const page = await context.newPage();
 
     // Auth check
-    await page.goto('https://www.linkedin.com/feed', { timeout: 45_000 });
+    await page.goto('https://www.linkedin.com/feed', { waitUntil: 'domcontentloaded', timeout: 45_000 });
     if (isAuthWall(page.url())) {
       process.stderr.write(
         'LinkedIn session expired.\n' +

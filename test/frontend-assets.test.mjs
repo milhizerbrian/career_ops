@@ -12,11 +12,20 @@ describe('frontend asset loading', () => {
   it('serves dashboard framework and icon assets locally', () => {
     const html = read('public/index.html');
 
-    assert.match(html, /src="\/vendor\/tailwindcss-forms-container-queries\.js"/);
+    assert.match(html, /href="\/css\/tailwind\.generated\.css"/);
     assert.match(html, /href="\/vendor\/material-symbols\.css"/);
-    assert.ok(exists('public/vendor/tailwindcss-forms-container-queries.js'));
+    assert.ok(exists('public/css/tailwind.generated.css'));
+    assert.ok(exists('public/css/tailwind.input.css'));
+    assert.ok(exists('tailwind.config.cjs'));
     assert.ok(exists('public/vendor/material-symbols.css'));
     assert.ok(exists('public/vendor/material-symbols-outlined.ttf'));
+  });
+
+  it('does not load the runtime Tailwind compiler', () => {
+    const html = read('public/index.html');
+
+    assert.doesNotMatch(html, /tailwindcss-forms-container-queries\.js/);
+    assert.doesNotMatch(html, /tailwind\.config\s*=/);
   });
 
   it('does not depend on remote frontend font or framework hosts', () => {
