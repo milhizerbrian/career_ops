@@ -8,8 +8,8 @@ import {
 } from '../scripts/scrape-linkedin-contacts.mjs';
 
 describe('matchesContactTitle', () => {
-  it('matches VP of Customer Success', () => {
-    assert.equal(matchesContactTitle('VP of Customer Success'), true);
+  it('rejects VP of Customer Success', () => {
+    assert.equal(matchesContactTitle('VP of Customer Success'), false);
   });
   it('matches Director, Customer Success', () => {
     assert.equal(matchesContactTitle('Director, Customer Success'), true);
@@ -33,7 +33,7 @@ describe('matchesContactTitle', () => {
     assert.equal(matchesContactTitle(''), false);
   });
   it('is case-insensitive', () => {
-    assert.equal(matchesContactTitle('VP OF CUSTOMER SUCCESS'), true);
+    assert.equal(matchesContactTitle('HEAD OF CUSTOMER SUCCESS'), true);
   });
 });
 
@@ -158,21 +158,21 @@ const SAMPLE_RESULTS_HTML = `
 describe('parseContactCards', () => {
   it('extracts CS leadership contacts and filters out non-CS titles', () => {
     const contacts = parseContactCards(SAMPLE_RESULTS_HTML);
-    assert.equal(contacts.length, 2);
-    assert.equal(contacts[0].name, 'Jane Smith');
-    assert.equal(contacts[1].name, 'Carol White');
+    assert.equal(contacts.length, 1);
+    assert.equal(contacts[0].name, 'Carol White');
+    assert.ok(!contacts.some(c => c.name === 'Jane Smith'));
     assert.ok(!contacts.some(c => c.name === 'Bob Doe'));
   });
 
   it('strips "at Company Name" from title', () => {
     const contacts = parseContactCards(SAMPLE_RESULTS_HTML);
-    assert.equal(contacts[0].title, 'VP of Customer Success');
+    assert.equal(contacts[0].title, 'Director, Customer Success');
     assert.ok(!contacts[0].title.includes(' at '));
   });
 
   it('normalizes linkedinUrl without tracking params', () => {
     const contacts = parseContactCards(SAMPLE_RESULTS_HTML);
-    assert.equal(contacts[0].linkedinUrl, 'https://www.linkedin.com/in/janesmith');
+    assert.equal(contacts[0].linkedinUrl, 'https://www.linkedin.com/in/carolwhite');
   });
 
   it('returns empty array for empty results HTML', () => {

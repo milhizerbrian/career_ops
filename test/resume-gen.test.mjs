@@ -179,7 +179,8 @@ describe('validateResumeQuality', () => {
 
     assert.doesNotMatch(value, /for enterprise security stakeholders through documented deployment criteria/i);
     assert.doesNotMatch(value, /Deployed AI workflow automation inside customer SOC environments/i);
-    assert.match(value, /Built AI workflow automation/);
+    assert.doesNotMatch(value, /AI workflow automation/i);
+    assert.match(value, /Mapped customer investigation workflows/);
   });
 
   it('rejects generated filler clauses and unsupported customer-SOC AI claims', () => {
@@ -827,6 +828,15 @@ describe('active resume prompts', () => {
     assert.equal(classifyResumeRole(jd), 'startup-commercial-cs-builder');
   });
 
+  it('detects Maven-style AI customer experience roles before generic startup commercial CS', () => {
+    const jd = [
+      'Customer Experience Manager - Strategic for an enterprise AI platform.',
+      'Own conversational AI agents, LLM quality, prompt tuning, contracted-volume consumption, onboarding, and multi-department customer service workflows.',
+    ].join('\n');
+
+    assert.equal(classifyResumeRole(jd), 'ai-customer-experience');
+  });
+
   it('keeps technical CSM roles with onboarding discovery out of pre-sales mode', () => {
     const jd = [
       'Technical Customer Success Manager',
@@ -996,6 +1006,28 @@ describe('active resume prompts', () => {
     assert.ok(plan.downrankVocabulary.some(item => /direct physical security/i.test(item)));
   });
 
+  it('plans AI CXM sections around truthful AI adoption transfer instead of direct LLM claims', () => {
+    const requirements = extractJobRequirements(
+      'Customer Experience Manager for an enterprise AI platform owning onboarding, consumption, AI quality, Product and Engineering feedback, and multi-department workflow integration.',
+      ''
+    );
+    const evidenceMap = buildEvidenceMap(
+      requirements,
+      'McAfee largest cloud security onboarding with highest NPS. Securonix usage data, Product and Engineering feedback, and 30% onboarding reduction. Auth0 IAM integration workflows across 14 enterprise accounts.'
+    );
+    const plan = buildResumeSectionPlan({
+      roleMode: 'ai-customer-experience',
+      requirements,
+      evidenceMap,
+    });
+
+    assert.match(plan.taglineDirective, /Customer Experience Manager|AI Platform Adoption/i);
+    assert.match(plan.summaryThesis, /quality|usage data|Product and Engineering/i);
+    assert.ok(plan.emphasizeBullets.some(item => /McAfee/i.test(item)));
+    assert.ok(plan.emphasizeBullets.some(item => /Auth0/i.test(item)));
+    assert.ok(plan.downrankVocabulary.some(item => /direct LLM/i.test(item)));
+  });
+
   it('critiques SaaS expansion framing in MSP compliance delivery drafts', () => {
     const planningContext = buildResumePlanningContext(
       'Director of Customer Success at a managed services provider owning compliance program delivery, onboarding project management, corrective action plans, technology rollouts, dashboards, and escalation accountability.',
@@ -1068,6 +1100,27 @@ describe('active resume prompts', () => {
     assert.ok(issues.some(issue => issue.code === 'missing-physical-security-iot-bridge'));
     assert.ok(issues.some(issue => issue.code === 'missing-total-trial-builder-proof'));
     assert.ok(issues.some(issue => issue.code === 'missing-securonix-churn-save-proof'));
+  });
+
+  it('critiques Maven-style AI CXM drafts that overfit cybersecurity or invent direct AI work', () => {
+    const jd = 'Customer Experience Manager - Strategic for an enterprise AI platform with LLMs, prompt tuning, AI quality, contracted-volume consumption, onboarding, Product and Engineering collaboration, and multi-department customer service workflows.';
+    const planningContext = buildResumePlanningContext(
+      jd,
+      '',
+      'McAfee largest cloud security onboarding with highest NPS. Securonix usage data, Product and Engineering feedback, and 30% onboarding reduction. Auth0 IAM integration workflows across 14 enterprise accounts. ExtraHop telemetry business cases.'
+    );
+    const issues = critiqueResumeDraft({
+      TITLE_LINE: 'Strategic Customer Success Manager | NDR, SIEM & Cybersecurity',
+      PROFESSIONAL_SUMMARY: 'Cybersecurity customer success leader with direct experience with AI workflow automation and security platform adoption.',
+      CORE_COMPETENCIES: 'NDR | SIEM | IAM | SOC | Threat Detection',
+      JOB_1_BULLET_1: 'Built AI workflow automation targeting repetitive security operations tasks across a $23M enterprise portfolio.',
+    }, planningContext);
+
+    assert.equal(planningContext.roleMode, 'ai-customer-experience');
+    assert.ok(issues.some(issue => issue.code === 'missing-ai-cx-positioning'));
+    assert.ok(issues.some(issue => issue.code === 'unsupported-direct-ai-claim'));
+    assert.ok(issues.some(issue => issue.code === 'missing-mcafee-onboarding-analog'));
+    assert.ok(issues.some(issue => issue.code === 'missing-ai-quality-data-loop'));
   });
 
   it('critiques generic commercial CSM drafts that miss NRR, demos, health checks, or mentorship', () => {
@@ -1205,6 +1258,42 @@ describe('active resume prompts', () => {
     assert.match(repaired.CORE_COMPETENCIES, /AI Workflow Automation/);
     assert.match(repaired.CORE_COMPETENCIES, /Threat Hunting/);
     assert.match(repaired.KEY_ACHIEVEMENT_4, /Total Trial Services|87 clients|22%/);
+  });
+
+  it('applies deterministic Maven-style AI CXM repairs with truthful source bridges', () => {
+    const jdText = 'Customer Experience Manager - Strategic for an enterprise AI platform owning onboarding, adoption, consumption, AI quality, Product and Engineering collaboration, and multi-department workflow integration.';
+    const planningContext = buildResumePlanningContext(
+      jdText,
+      '',
+      'McAfee largest cloud security onboarding with highest NPS. Securonix usage data, Product and Engineering feedback, and 30% onboarding reduction. Auth0 IAM integration workflows across 14 enterprise accounts. ExtraHop telemetry business cases.'
+    );
+    const repaired = applyDeterministicStrategicRepairs({
+      TITLE_LINE: 'Strategic Customer Success Manager | NDR, SIEM & Cybersecurity',
+      METRICS_LINE: '$23M ARR Portfolio',
+      PROFESSIONAL_SUMMARY: 'Cybersecurity customer success leader with direct experience with AI workflow automation.',
+      CORE_COMPETENCIES: 'NDR | SIEM | IAM',
+      KEY_ACHIEVEMENT_1: 'Closed a $13M enterprise renewal with 122% expansion.',
+      KEY_ACHIEVEMENT_2: 'Recovered three at-risk Securonix accounts.',
+      KEY_ACHIEVEMENT_3: 'Cut onboarding time 30%.',
+      KEY_ACHIEVEMENT_4: 'Built CS playbooks.',
+    }, [
+      'TITLE_LINE',
+      'METRICS_LINE',
+      'PROFESSIONAL_SUMMARY',
+      'CORE_COMPETENCIES',
+      'KEY_ACHIEVEMENT_1',
+      'KEY_ACHIEVEMENT_2',
+      'KEY_ACHIEVEMENT_3',
+      'KEY_ACHIEVEMENT_4',
+    ], { jdText, planningContext });
+
+    assert.match(repaired.TITLE_LINE, /Customer Experience Manager|AI Platform Adoption/);
+    assert.match(repaired.PROFESSIONAL_SUMMARY, /Maven-relevant proof/);
+    assert.doesNotMatch(repaired.PROFESSIONAL_SUMMARY, /direct experience with AI workflow automation/i);
+    assert.match(repaired.CORE_COMPETENCIES, /Quality \/ Usage Data Reviews/);
+    assert.match(repaired.KEY_ACHIEVEMENT_2, /usage data|Product and Engineering/);
+    assert.match(repaired.KEY_ACHIEVEMENT_3, /McAfee|largest cloud-security onboarding/);
+    assert.match(repaired.KEY_ACHIEVEMENT_4, /Auth0|workflow integrations/);
   });
 
   it('applies deterministic Hakimo-style commercial startup CSM repairs', () => {

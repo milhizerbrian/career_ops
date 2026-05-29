@@ -10,7 +10,7 @@ const ACTIVE_STATUSES = new Set([
   'applied', 'recruiter_screen', 'hiring_manager_screen', 'technical_screen',
 ]);
 const MAX_CONTACTS_PER_COMPANY = 5;
-const TITLE_KEYWORDS = ['vp', 'vice president', 'director', 'head of', 'chief customer', 'manager', 'lead'];
+const TITLE_KEYWORDS = ['director', 'head of', 'chief customer', 'manager', 'lead'];
 
 export function matchesContactTitle(title) {
   const t = title.toLowerCase();

@@ -32,8 +32,8 @@ const APPLICATIONS_PATH = 'data/applications.md';
 // Ensure required directories exist (fresh setup)
 mkdirSync('data', { recursive: true });
 
-const CONCURRENCY = 10;
-const FETCH_TIMEOUT_MS = 10_000;
+const CONCURRENCY = Number(process.env.SCAN_CONCURRENCY ?? '5');
+const FETCH_TIMEOUT_MS = 20_000;
 
 // ── Date filter helpers ──────────────────────────────────────────────
 
@@ -71,7 +71,7 @@ function detectApi(company) {
   if (ashbyMatch) {
     return {
       type: 'ashby',
-      url: `https://api.ashbyhq.com/posting-api/job-board/${ashbyMatch[1]}?includeCompensation=true`,
+      url: `https://api.ashbyhq.com/posting-api/job-board/${ashbyMatch[1]}`,
     };
   }
 
@@ -258,16 +258,39 @@ async function scanWttj(wttjConfig, titleFilter, locationFilter, seenUrls, seenC
 
 // ── Fetch with timeout ──────────────────────────────────────────────
 
-async function fetchJson(url) {
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
-  try {
-    const res = await fetch(url, { signal: controller.signal });
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    return await res.json();
-  } finally {
-    clearTimeout(timer);
+function ashbyWithoutCompensation(url) {
+  const parsed = new URL(url);
+  if (!/api\.ashbyhq\.com$/i.test(parsed.hostname)) return null;
+  if (!parsed.searchParams.has('includeCompensation')) return null;
+  parsed.searchParams.delete('includeCompensation');
+  return parsed.toString();
+}
+
+async function fetchJson(url, { allowFallback = true } = {}) {
+  const attempts = 2;
+  let lastTimeout = false;
+  for (let attempt = 1; attempt <= attempts; attempt += 1) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
+    try {
+      const res = await fetch(url, { signal: controller.signal });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      return await res.json();
+    } catch (err) {
+      if (err.name === 'AbortError') {
+        lastTimeout = true;
+        const fallbackUrl = allowFallback ? ashbyWithoutCompensation(url) : null;
+        if (fallbackUrl) return fetchJson(fallbackUrl, { allowFallback: false });
+        if (attempt < attempts) continue;
+      } else {
+        throw err;
+      }
+    } finally {
+      clearTimeout(timer);
+    }
   }
+  if (lastTimeout) throw new Error(`timeout after ${Math.round(FETCH_TIMEOUT_MS / 1000)}s x${attempts}`);
+  throw new Error('request failed');
 }
 
 // ── Title filter ────────────────────────────────────────────────────
