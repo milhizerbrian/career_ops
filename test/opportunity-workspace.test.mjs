@@ -34,6 +34,11 @@ fs.writeFileSync(path.join(candidateDir, 'achievements.json'), JSON.stringify([
   { id: 'achievement-003', fact: 'Managed and developed a team of 4 CSMs', category: 'achievement', employer: 'Total Trial Services', verified: true, allowed_in_resume: true },
 ], null, 2));
 
+fs.writeFileSync(path.join(candidateDir, 'stories.json'), JSON.stringify([
+  { id: 'story-001', category: 'story', employer: 'Total Trial Services', verified: true, situation: 'CSM team was new', task: 'Build the team', action: 'Managed and developed a team of CSMs', result: 'Team retained key accounts' },
+  { id: 'story-002', category: 'story', employer: 'Total Trial Services', verified: false, situation: 'Unverified draft', task: 'Build the team', action: 'Managed and developed a team of CSMs', result: 'Unconfirmed' },
+], null, 2));
+
 // A job description that scores as "usable" (has requirements/responsibilities
 // markers) and, against the single fact above, is known (verified against the
 // real jd-parser/candidate-fit-analysis output) to produce a mix of tiers:
@@ -169,5 +174,31 @@ describe('buildOpportunityWorkspace', () => {
     assert.equal(ws.resumeVersions.length, 0);
     assert.equal(ws.fit.available, false);
     assert.equal(Array.isArray(ws.activity), true);
+  });
+
+  it('includes a verified-evidence-only interview prep read model', () => {
+    writeTracker({
+      'job-prep': {
+        company: 'Acme', title: 'Strategic CSM', status: 'technical_screen', stage: 'interview', date_updated: '2026-09-20',
+        full_description: USABLE_JD,
+        interviews: [{ id: 'round-1', roundType: 'hiring_manager', status: 'scheduled', scheduledAt: '2099-01-01T15:00:00.000Z', contactIds: [] }],
+      },
+    });
+    const ws = mod.buildOpportunityWorkspace('job-prep');
+    const prep = ws.interviewPrep;
+    assert.ok(prep, 'expected interviewPrep on the workspace payload');
+    assert.equal(prep.roundType, 'hiring_manager');
+    assert.equal(prep.briefing.company, 'Acme');
+
+    const people = prep.evidence.find(e => e.requirement === 'people management');
+    assert.ok(people, 'expected evidence for people management');
+    assert.deepEqual(people.facts.map(f => f.id), ['achievement-003']);
+    assert.deepEqual(people.stories.map(s => s.id), ['story-001']);
+    assert.doesNotMatch(JSON.stringify(prep), /Unverified draft/);
+
+    assert.ok(prep.gaps.some(g => g.requirement === 'RFP/RFI response'));
+    assert.ok(prep.likelyQuestions.length > 0);
+    assert.ok(prep.questionsToAsk.length > 0);
+    assert.equal(prep.checklist.find(c => c.id === 'round_scheduled').done, true);
   });
 });
