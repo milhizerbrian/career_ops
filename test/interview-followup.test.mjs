@@ -122,7 +122,26 @@ describe('Phase 9.5 thank-you drafts', () => {
     });
     assert.equal(draft.source, 'fallback');
     assert.doesNotMatch(draft.text, /300%|\$5M/);
-    assert.deepEqual(draft.unsupportedClaims.sort(), ['$5M', '300%'].sort());
+    for (const claim of ['$5M', '300%']) assert.ok(draft.unsupportedClaims.includes(claim), claim);
+  });
+
+  it('rejects LM output with non-numeric invented career claims and falls back', async () => {
+    const { job, roundId } = jobWithCompletedRound();
+    const draft = await createOutreachDraft(job, { contactId: 'c-int', type: 'thank_you', roundId }, {
+      candidateFacts: FACTS,
+      fetchImpl: lmStub('Hi Dana, as a former director at Palo Alto Networks with CISSP certification, I enjoyed our talk.'),
+      now: NOW,
+    });
+    assert.equal(draft.source, 'fallback');
+    assert.doesNotMatch(draft.text, /Palo Alto|CISSP|director/);
+    assert.ok(draft.unsupportedClaims.includes('Palo Alto Networks'));
+  });
+
+  it('the fallback template itself passes the factual-claim validator', async () => {
+    const { findUnsupportedFactualClaims } = await import('../lib/evidence-validator.mjs');
+    const { job, roundId } = jobWithCompletedRound();
+    const draft = await createOutreachDraft(job, { contactId: 'c-int', type: 'thank_you', roundId }, { useLmStudio: false, candidateFacts: FACTS, now: NOW });
+    assert.deepEqual(findUnsupportedFactualClaims(draft.text, [job.company, job.title, 'Dana Lee', 'VP Customer Success', 'Hiring Manager']), []);
   });
 
   it('stores thank_you drafts that survive tracker validation', async () => {

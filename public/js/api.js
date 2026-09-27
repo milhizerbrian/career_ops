@@ -38,6 +38,10 @@ export function fetchAnalyticsSummary() {
   return jsonFetch('/api/analytics/summary');
 }
 
+export function fetchOutcomeIntelligence() {
+  return jsonFetch('/api/analytics/outcomes');
+}
+
 export function fetchSettingsHealth() {
   return jsonFetch('/api/settings/health');
 }

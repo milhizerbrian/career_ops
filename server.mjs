@@ -23,6 +23,7 @@ import { beginSharedResumeResources, canStartResumeRun, resumeMaxConcurrent } fr
 import { appendWorkflowEvent, applyManualWorkflowEvent } from './lib/job-workflow.mjs';
 import { upsertJobContact } from './lib/job-contacts.mjs';
 import { upsertInterviewRound } from './lib/interview-rounds.mjs';
+import { buildOutcomeIntelligence } from './lib/outcome-intelligence.mjs';
 import { createOutreachDraft, storeOutreachDraft } from './lib/outreach-drafts.mjs';
 import {
   getRecruiterTargeting,
@@ -248,6 +249,16 @@ app.get('/api/analytics/summary', (req, res) => {
       const { jobs } = getCachedDashboard();
       return buildAnalyticsSummary(jobs);
     }));
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Phase 10: Outcome Intelligence — deterministic funnel/segment/timing read
+// model over the same cached dashboard jobs (lib/outcome-intelligence.mjs).
+app.get('/api/analytics/outcomes', (req, res) => {
+  try {
+    res.json(getCachedValue('analytics:outcomes', () => buildOutcomeIntelligence(getCachedDashboard().jobs)));
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

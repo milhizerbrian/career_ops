@@ -207,3 +207,19 @@ describe('Interview rounds API (Phase 9.1)', () => {
     assert.equal(noRound.res.status, 404);
   });
 });
+
+describe('Outcome Intelligence API (Phase 10)', () => {
+  it('serves funnel, conversions, segments, timing, and insights', async () => {
+    const { res, body } = await request('/api/analytics/outcomes');
+    assert.equal(res.status, 200);
+    assert.equal(typeof body.funnel.discovered, 'number');
+    assert.ok(Array.isArray(body.conversions));
+    assert.ok(body.conversions.every(c => 'sufficient' in c && 'numerator' in c && 'denominator' in c));
+    for (const dim of ['source', 'fitRange', 'roleCategory', 'company', 'workArrangement', 'resume', 'networking']) {
+      assert.ok(Array.isArray(body.segments[dim].rows), dim);
+    }
+    assert.ok(Array.isArray(body.timing));
+    assert.ok(Array.isArray(body.insights));
+    assert.ok(body.assumptions.length > 0);
+  });
+});

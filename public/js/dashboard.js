@@ -13,6 +13,7 @@ import {
   fetchEvidenceVault,
   fetchHome,
   fetchOpportunityWorkspace,
+  fetchOutcomeIntelligence,
   fetchOutreachWorkspace,
   fetchResumeRuns,
   fetchResumeWorkspace,
@@ -71,6 +72,7 @@ let resumeWorkspace = null;
 let outreachWorkspace = null;
 let contactsWorkspace = null;
 let analyticsSummary = null;
+let analyticsOutcomes = null;
 let settingsHealth = null;
 // Phase 5: Career Evidence Vault state
 let vaultData = null;
@@ -1936,6 +1938,7 @@ function invalidateWorkspaceCaches() {
   outreachWorkspace = null;
   contactsWorkspace = null;
   analyticsSummary = null;
+  analyticsOutcomes = null;
   settingsHealth = null;
   vaultData = null;
 }
@@ -3200,6 +3203,121 @@ function bindContactsWorkspaceActions(root, contacts) {
   }));
 }
 
+// ─── Phase 10: Outcome Intelligence ────────────────────────────────────────
+// Renders lib/outcome-intelligence.mjs output. Rates below the server's
+// minimum sample are shown as raw counts marked "low sample", never as a
+// percentage, and insights come verbatim from the server.
+const OUTCOME_DIMENSION_ORDER = ['source', 'fitRange', 'roleCategory', 'networking', 'resume', 'workArrangement', 'company'];
+
+async function renderOutcomeIntelligencePanel() {
+  const root = document.getElementById('analytics-outcomes-root');
+  if (!root) return;
+  try {
+    if (!analyticsOutcomes) {
+      root.innerHTML = workspaceLoadingPanel('Loading outcome intelligence…');
+      analyticsOutcomes = await fetchOutcomeIntelligence();
+    }
+    root.innerHTML = renderOutcomeIntelligence(analyticsOutcomes);
+  } catch (e) {
+    root.innerHTML = workspaceErrorPanel(e.message);
+  }
+}
+
+function outcomeRateHtml(r) {
+  if (!r || !r.denominator) return '<span class="text-slate-300">—</span>';
+  if (!r.sufficient) return `<span class="text-slate-500">${r.numerator}/${r.denominator}</span> <span class="text-[10px] text-slate-400">low sample</span>`;
+  return `<span class="font-semibold text-slate-800">${Math.round(r.rate * 100)}%</span> <span class="text-[10px] text-slate-400">(${r.numerator}/${r.denominator})</span>`;
+}
+
+function renderOutcomeFunnel(f) {
+  const steps = [['Discovered', f.discovered], ['Pursued', f.interested], ['Applied', f.applied], ['Interviewed', f.interview], ['Offer', f.offer]];
+  const max = Math.max(1, f.discovered);
+  const closed = [
+    ['Awaiting response', f.awaitingResponse],
+    ['In interviews', f.inInterviews],
+    ['Rejected after applying', f.rejectedAfterApplying],
+    ['Rejected after interview', f.rejectedAfterInterview],
+    ['Withdrawn', f.withdrawn],
+    ['Closed before applying', f.closedBeforeApplying],
+  ];
+  return `<div class="space-y-1.5">${steps.map(([label, n]) => `<div class="flex items-center gap-3 text-xs">
+      <span class="w-24 shrink-0 text-slate-500">${esc(label)}</span>
+      <div class="flex-1 bg-slate-100 rounded h-4 overflow-hidden"><div class="bg-blue-600 h-4 rounded" style="width:${n ? Math.max(1.5, (n / max) * 100) : 0}%"></div></div>
+      <span class="w-12 text-right font-semibold text-slate-700">${n}</span>
+    </div>`).join('')}</div>
+    <div class="flex flex-wrap gap-1.5 mt-3">${closed.map(([label, n]) => `<span class="text-[11px] bg-slate-50 text-slate-600 border border-slate-100 rounded px-2 py-1">${esc(label)}: <strong>${n}</strong></span>`).join('')}</div>`;
+}
+
+function renderOutcomeSegment(dim, seg, open) {
+  const rows = seg.rows || [];
+  return `<details class="outcome-segment border-b border-slate-100 last:border-0 py-2" data-dimension="${esc(dim)}" ${open ? 'open' : ''}>
+    <summary class="text-xs font-semibold text-slate-700 cursor-pointer">${esc(seg.label)} <span class="text-slate-400 font-normal">(${rows.length} group${rows.length === 1 ? '' : 's'})</span></summary>
+    ${rows.length ? `<div class="overflow-x-auto mt-2"><table class="w-full text-xs">
+      <thead><tr class="border-b border-slate-200 text-slate-400 uppercase text-[10px] tracking-wide">
+        <th class="text-left py-1 pr-2">Group</th><th class="text-right px-2">Tracked</th><th class="text-right px-2">Applied</th><th class="text-right px-2">Interviews</th><th class="text-right px-2">Offers</th><th class="text-right px-2">Rejected</th><th class="text-left px-2">App → interview</th><th class="text-left px-2">Interview → offer</th>
+      </tr></thead>
+      <tbody>${rows.map(r => `<tr class="border-b border-slate-50 align-top">
+        <td class="py-1.5 pr-2 text-slate-700">${esc(r.label)}${r.caveat ? `<p class="text-[10px] text-amber-700 max-w-xs">${esc(r.caveat)}</p>` : ''}</td>
+        <td class="text-right px-2 text-slate-500">${r.total}</td>
+        <td class="text-right px-2 text-slate-700">${r.applied}</td>
+        <td class="text-right px-2 text-slate-700">${r.interviews}</td>
+        <td class="text-right px-2 text-slate-700">${r.offers}</td>
+        <td class="text-right px-2 text-slate-500">${r.rejected}</td>
+        <td class="px-2 whitespace-nowrap">${outcomeRateHtml(r.interviewRate)}</td>
+        <td class="px-2 whitespace-nowrap">${outcomeRateHtml(r.offerRate)}</td>
+      </tr>`).join('')}</tbody>
+    </table></div>` : '<p class="text-xs text-slate-400 mt-1">No data.</p>'}
+  </details>`;
+}
+
+function renderOutcomeIntelligence(data) {
+  const measured = (data.insights || []).filter(i => i.kind === 'measured');
+  const insufficient = (data.insights || []).filter(i => i.kind === 'insufficient');
+  return `<div class="bg-white rounded-xl border border-slate-200 shadow-sm p-4 space-y-4">
+    <div>
+      <p class="text-label-caps font-label-caps text-slate-500">OUTCOME INTELLIGENCE</p>
+      <p class="text-xs text-slate-400">Measured from your recorded job-search history. Rates need at least ${esc(data.minSample)} in the base; smaller groups show counts only.</p>
+    </div>
+    <div class="grid grid-cols-1 xl:grid-cols-2 gap-4">
+      <div>
+        <p class="text-[10px] font-bold uppercase tracking-wide text-slate-400 mb-2">Funnel (furthest stage reached)</p>
+        ${renderOutcomeFunnel(data.funnel || {})}
+      </div>
+      <div>
+        <p class="text-[10px] font-bold uppercase tracking-wide text-slate-400 mb-2">Conversion</p>
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">${(data.conversions || []).map(c => `<div class="outcome-conversion bg-slate-50 border border-slate-100 rounded-lg px-3 py-2">
+          <p class="text-[10px] font-bold uppercase tracking-wide text-slate-400">${esc(c.label)}</p>
+          <p class="text-sm">${c.sufficient ? outcomeRateHtml(c) : `<span class="text-slate-500">Not enough data</span> <span class="text-[10px] text-slate-400">(${c.numerator}/${c.denominator})</span>`}</p>
+        </div>`).join('')}</div>
+      </div>
+    </div>
+    <div class="grid grid-cols-1 xl:grid-cols-2 gap-4">
+      <div>
+        <p class="text-[10px] font-bold uppercase tracking-wide text-slate-400 mb-2">What the data shows</p>
+        ${measured.length ? `<ul class="space-y-1.5">${measured.map(i => `<li class="outcome-insight-measured text-xs text-slate-700 flex gap-2"><span class="material-symbols-outlined text-base leading-none text-blue-600">insights</span><span>${esc(i.text)}</span></li>`).join('')}</ul>` : '<p class="text-xs text-slate-400">No differences large enough, with enough data, to report yet.</p>'}
+        ${insufficient.length ? `<p class="text-[10px] font-bold uppercase tracking-wide text-slate-400 mt-3 mb-1">Not enough data yet</p>
+          <ul class="space-y-1">${insufficient.map(i => `<li class="outcome-insight-insufficient text-xs text-slate-500">${esc(i.text)}</li>`).join('')}</ul>` : ''}
+      </div>
+      <div>
+        <p class="text-[10px] font-bold uppercase tracking-wide text-slate-400 mb-2">Timing (median days, recorded dates only)</p>
+        <table class="w-full text-xs"><tbody>${(data.timing || []).map(t => `<tr class="border-b border-slate-50">
+          <td class="py-1.5 text-slate-600">${esc(t.label)}</td>
+          <td class="py-1.5 text-right">${t.sufficient ? `<span class="font-semibold text-slate-800">${esc(t.medianDays)} days</span>` : t.n ? `<span class="text-slate-500">${esc(t.medianDays)} days</span> <span class="text-[10px] text-slate-400">low sample</span>` : '<span class="text-slate-400">No data</span>'}</td>
+          <td class="py-1.5 text-right text-[10px] text-slate-400 w-12">n=${t.n}</td>
+        </tr>`).join('')}</tbody></table>
+      </div>
+    </div>
+    <div>
+      <p class="text-[10px] font-bold uppercase tracking-wide text-slate-400 mb-1">Outcomes by segment</p>
+      ${OUTCOME_DIMENSION_ORDER.filter(dim => data.segments?.[dim]).map((dim, i) => renderOutcomeSegment(dim, data.segments[dim], i === 0)).join('')}
+    </div>
+    <details class="text-xs text-slate-500">
+      <summary class="font-semibold cursor-pointer">How this is measured and what's missing</summary>
+      <ul class="list-disc list-inside space-y-1 mt-2">${[...(data.assumptions || []), ...(data.dataGaps || [])].map(x => `<li>${esc(x)}</li>`).join('')}</ul>
+    </details>
+  </div>`;
+}
+
 async function renderAnalyticsWorkspace() {
   const countEl = document.getElementById('analytics-count-label');
   if (!countEl) return;
@@ -3246,6 +3364,7 @@ async function renderAnalyticsWorkspace() {
     staleRoot.innerHTML = renderStaleCleanupPanel(data.commandCenter?.staleCleanup || []);
     companyRoot.innerHTML = renderCompanyResearchRows(data.commandCenter?.companyResearch || []);
     resumeFeedbackRoot.innerHTML = renderResumeFeedbackPanel(data.commandCenter?.resumeFeedback || []);
+    renderOutcomeIntelligencePanel();
   } catch (e) {
     countEl.textContent = 'Analytics unavailable';
     stageRoot.innerHTML = workspaceErrorPanel(e.message);

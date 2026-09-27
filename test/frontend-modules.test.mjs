@@ -93,6 +93,22 @@ describe('frontend ES modules', () => {
     assert.match(dashboard, /round\.status === 'completed' \? renderRoundThankYou\(job, round, contacts\)/);
   });
 
+  it('renders Phase 10 Outcome Intelligence from the outcomes API', () => {
+    const html = read('public/index.html');
+    const dashboard = read('public/js/dashboard.js');
+    const api = read('public/js/api.js');
+    assert.match(html, /id="analytics-outcomes-root"/);
+    assert.match(api, /function fetchOutcomeIntelligence\(\)/);
+    assert.match(api, /'\/api\/analytics\/outcomes'/);
+    assert.match(dashboard, /analyticsOutcomes = await fetchOutcomeIntelligence\(\)/);
+    assert.match(dashboard, /'OUTCOME INTELLIGENCE'|OUTCOME INTELLIGENCE/);
+    assert.match(dashboard, /Not enough data/);
+    assert.match(dashboard, /low sample/);
+    for (const dim of ['source', 'fitRange', 'roleCategory', 'networking', 'resume', 'workArrangement', 'company']) {
+      assert.match(dashboard, new RegExp(`'${dim}'`));
+    }
+  });
+
   it('exposes sort handler for existing table header onclick attributes', () => {
     const html = read('public/index.html');
     const dashboard = read('public/js/dashboard.js');
