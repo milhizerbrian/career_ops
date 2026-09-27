@@ -1,26 +1,35 @@
 import {
+  addEvidenceFact,
+  answerCandidateQuestion,
   attachGmailAmbiguity,
   createDocs,
   deleteJobRequest,
   dismissGmailAmbiguity,
-  evaluateUrl,
   fetchAnalyticsSummary,
   fetchAmbiguousGmailJobs,
   fetchContactsWorkspace,
   fetchDashboard,
-  fetchJobDetail,
+  fetchEvidenceVault,
+  fetchHome,
+  fetchOpportunityWorkspace,
   fetchOutreachWorkspace,
   fetchResumeRuns,
   fetchResumeWorkspace,
   fetchSettingsHealth,
   generateContactOutreachDraft,
   patchJob,
+  patchOpportunity,
+  postActionDecision,
+  postOpportunityStage,
+  postQuickDecision,
   postWorkflowEvent,
+  promoteQuestionToEvidence,
   submitResumeGapAnswers,
+  updateEvidenceFact,
   upsertJobContact,
 } from './api.js';
 import { sortJobsBy } from './jobs-table.js';
-import { EVAL_STAGE_LABELS, STAGE_LABELS, STAGE_PROGRESS, humanizeStage, progressColor } from './progress.js';
+import { STAGE_LABELS, STAGE_PROGRESS, humanizeStage, progressColor } from './progress.js';
 import { INTERVIEW_STATUSES, STATUS_ORDER, createDashboardMeta } from './state.js';
 import { normalizeSource, sourceBadgeCls, sourceDisplayLabel } from './source-badges.js';
 
@@ -31,6 +40,11 @@ let dashboardMeta = { builtAt: null, lastScanAt: null };
 let ambiguousGmailJobs = [];
 let workflowSummary = { urgentFollowUps: 0, staleJobs: 0, upcomingInterviews: 0 };
 const socket   = io();
+
+// Phase 3: Daily Command Center state
+let homeData = null;
+let startDayQueue = [];
+let startDayIndex = 0;
 
 // Sort state
 let oppSort      = { col: 'date_updated', dir: 'desc' };
@@ -46,9 +60,17 @@ let outreachWorkspace = null;
 let contactsWorkspace = null;
 let analyticsSummary = null;
 let settingsHealth = null;
+// Phase 5: Career Evidence Vault state
+let vaultData = null;
+let currentVaultTab = 'experience';
 let currentJobDetailId = '';
+// Phase 4: Opportunity Workspace state
+let currentJobDetailTab = 'overview';
+let currentJobDetailData = null;
+let jobDetailReturnView = 'jobs';
 let contactsSort = { col: 'experienceMatchPct', dir: 'desc' };
 let delegatedWorkspaceActionsReady = false;
+const compactSidebarQuery = window.matchMedia('(max-width: 1179px)');
 
 const INACTIVE_DASHBOARD_STATUS_RE = /\b(rejected?|declined|pass(?:ed)?|closed|archived|withdrawn)\b/i;
 
@@ -75,8 +97,11 @@ function jobById(jobId) {
 function replaceJobInState(job) {
   if (!job?.id) return;
   const idx = allJobs.findIndex(item => item.id === job.id);
+  // Merge rather than overwrite: a partial read model (e.g. from a
+  // workflow-event/contact mutation) omits Opportunity-only fields
+  // (stage/priority/overallFit/...) that a fuller fetch may have set.
   if (idx === -1) allJobs.unshift(job);
-  else allJobs[idx] = job;
+  else allJobs[idx] = { ...allJobs[idx], ...job };
   invalidateWorkspaceCaches();
 }
 
@@ -113,10 +138,23 @@ function setupSidebarControls() {
   const root = document.documentElement;
   const toggle = document.getElementById('sidebar-toggle');
   const handle = document.getElementById('sidebar-resize-handle');
+  const backdrop = document.getElementById('sidebar-backdrop');
   const storedWidthValue = localStorage.getItem('careerOpsSidebarWidth');
   const storedWidth = storedWidthValue == null ? null : Number(storedWidthValue);
   const storedCollapsed = localStorage.getItem('careerOpsSidebarCollapsed') === '1';
+  const isCompact = () => compactSidebarQuery.matches;
   const clamp = value => Math.min(384, Math.max(192, value));
+  const applyMobileOpen = open => {
+    document.body.classList.toggle('sidebar-mobile-open', open);
+    if (toggle) {
+      const icon = toggle.querySelector('.material-symbols-outlined');
+      toggle.setAttribute('aria-expanded', String(open));
+      toggle.setAttribute('aria-label', open ? 'Close navigation' : 'Open navigation');
+      toggle.title = open ? 'Close navigation' : 'Open navigation';
+      if (icon) icon.textContent = open ? 'left_panel_close' : 'menu';
+      toggle.style.left = '12px';
+    }
+  };
   const applyWidth = value => {
     const width = clamp(value);
     root.style.setProperty('--sidebar-width', `${width}px`);
@@ -126,6 +164,10 @@ function setupSidebarControls() {
     localStorage.setItem('careerOpsSidebarWidth', String(width));
   };
   const applyCollapsed = collapsed => {
+    if (isCompact()) {
+      applyMobileOpen(!collapsed);
+      return;
+    }
     document.body.classList.toggle('sidebar-collapsed', collapsed);
     if (toggle) {
       const icon = toggle.querySelector('.material-symbols-outlined');
@@ -143,13 +185,32 @@ function setupSidebarControls() {
   };
 
   if (Number.isFinite(storedWidth)) applyWidth(storedWidth);
-  if (storedCollapsed) applyCollapsed(true);
+  if (isCompact()) applyMobileOpen(false);
+  else applyCollapsed(storedCollapsed);
 
   toggle?.addEventListener('click', () => {
+    if (isCompact()) {
+      applyMobileOpen(!document.body.classList.contains('sidebar-mobile-open'));
+      return;
+    }
     applyCollapsed(!document.body.classList.contains('sidebar-collapsed'));
   });
 
+  backdrop?.addEventListener('click', () => applyMobileOpen(false));
+
+  document.querySelectorAll('.nav-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      if (isCompact()) applyMobileOpen(false);
+    });
+  });
+
+  compactSidebarQuery.addEventListener('change', () => {
+    applyMobileOpen(false);
+    if (!isCompact()) applyCollapsed(localStorage.getItem('careerOpsSidebarCollapsed') === '1');
+  });
+
   handle?.addEventListener('pointerdown', event => {
+    if (isCompact()) return;
     event.preventDefault();
     applyCollapsed(false);
     document.body.classList.add('sidebar-resizing');
@@ -210,21 +271,26 @@ async function init() {
     setupInterviews();
     setupRejected();
     setupOperationalWorkspaces();
+    setupHome();
+    setupVault();
     renderWorkspaceView(viewFromPath());
     restoreResumeRuns();
+    loadHome();
   } catch (e) {
     document.getElementById('dash-subtitle').textContent = 'Failed to load: ' + e.message;
   }
 }
 
 // ─── Navigation ───────────────────────────────────────────────────────────────
-const VIEWS = ['dashboard', 'jobs', 'resume', 'outreach', 'contacts', 'gmail-review', 'interviews', 'rejected', 'analytics', 'settings'];
+const VIEWS = ['home', 'dashboard', 'jobs', 'resume', 'outreach', 'contacts', 'vault', 'gmail-review', 'interviews', 'rejected', 'analytics', 'settings'];
 const VIEW_PATHS = {
-  dashboard: '/',
+  home: '/',
+  dashboard: '/dashboard',
   jobs: '/jobs',
   resume: '/resume',
   outreach: '/outreach',
   contacts: '/contacts',
+  vault: '/career-profile',
   'gmail-review': '/gmail-review',
   interviews: '/interviews',
   rejected: '/rejected',
@@ -232,12 +298,14 @@ const VIEW_PATHS = {
   settings: '/settings',
 };
 const PATH_VIEWS = {
-  '/': 'dashboard',
+  '/': 'home',
+  '/home': 'home',
   '/dashboard': 'dashboard',
   '/jobs': 'jobs',
   '/resume': 'resume',
   '/outreach': 'outreach',
   '/contacts': 'contacts',
+  '/career-profile': 'vault',
   '/gmail-review': 'gmail-review',
   '/gmail-revoew': 'gmail-review',
   '/interviews': 'interviews',
@@ -253,11 +321,11 @@ function viewFromPath(pathname = window.location.pathname) {
     return 'jobs';
   }
   currentJobDetailId = '';
-  return PATH_VIEWS[pathname] || 'dashboard';
+  return PATH_VIEWS[pathname] || 'home';
 }
 
 function showView(name, { push = true } = {}) {
-  const viewName = VIEWS.includes(name) ? name : 'dashboard';
+  const viewName = VIEWS.includes(name) ? name : 'home';
   VIEWS.forEach(v => {
     document.getElementById('view-' + v).hidden = (v !== viewName);
   });
@@ -548,6 +616,7 @@ function renderGmailAmbiguityCard(item) {
           ${item.role ? `· ${esc(item.role)}` : ''}
           <span class="text-slate-400">· ${formatConfidence(item.gmailMatch?.confidence)}</span>
         </p>
+        ${item.needsReview ? `<p class="text-[11px] text-amber-700 mt-1">Needs review: ${esc((item.reviewReasons || []).join('; '))}</p>` : ''}
       </div>
       <div class="min-w-0">
         <p class="text-[10px] font-bold uppercase tracking-wide text-slate-400 mb-2">If approved</p>
@@ -758,133 +827,8 @@ function setupOpportunities() {
   document.getElementById('opp-clear-btn').addEventListener('click',       clearOppFilters);
   document.getElementById('bulk-generate-visible-btn').addEventListener('click', triggerBulkGenerateVisible);
 
-  // Add Job panel
-  document.getElementById('add-job-btn').addEventListener('click', () => {
-    document.getElementById('add-job-panel').classList.remove('hidden');
-    document.getElementById('add-job-url').focus();
-  });
-  document.getElementById('add-job-cancel').addEventListener('click', closeAddJobPanel);
-  document.getElementById('add-job-submit').addEventListener('click', submitAddJob);
-  document.getElementById('add-job-url').addEventListener('keydown', e => {
-    if (e.key === 'Enter') submitAddJob();
-  });
-
   applyOppFilters();
 }
-
-function closeAddJobPanel() {
-  document.getElementById('add-job-panel').classList.add('hidden');
-  document.getElementById('add-job-url').value     = '';
-  document.getElementById('add-job-company').value = '';
-  document.getElementById('add-job-title').value   = '';
-  document.getElementById('add-job-log').innerHTML = '';
-  document.getElementById('add-job-log').classList.add('hidden');
-  const btn = document.getElementById('add-job-submit');
-  btn.disabled = false;
-  btn.style.removeProperty('background-color');
-  document.getElementById('add-job-submit-label').textContent = 'Scrape & Add';
-}
-
-let _addJobUrl = null; // track in-flight URL for socket matching
-
-async function submitAddJob() {
-  const url     = document.getElementById('add-job-url').value.trim();
-  const company = document.getElementById('add-job-company').value.trim();
-  const title   = document.getElementById('add-job-title').value.trim();
-  if (!url || !url.startsWith('http')) {
-    addJobLog('error', 'Please enter a valid http(s) URL.');
-    return;
-  }
-
-  _addJobUrl = url;
-  const btn  = document.getElementById('add-job-submit');
-  btn.disabled = true;
-  document.getElementById('add-job-submit-label').textContent = 'Scraping…';
-  document.getElementById('add-job-log').innerHTML = '';
-  document.getElementById('add-job-log').classList.remove('hidden');
-  addJobLog('ok', 'Sending to scraper…');
-
-  try {
-    await evaluateUrl({ url, company, title });
-    // progress + completion come via socket events below
-  } catch (e) {
-    addJobLog('error', e.response ? e.message : 'Network error: ' + e.message);
-    btn.disabled = false;
-    document.getElementById('add-job-submit-label').textContent = 'Retry';
-  }
-}
-
-function addJobLog(kind, text) {
-  const log   = document.getElementById('add-job-log');
-  const color = kind === 'error' ? 'text-rose-600' : kind === 'warning' ? 'text-amber-600' : 'text-emerald-700';
-  const d = document.createElement('div');
-  d.className = color;
-  d.textContent = text;
-  log.appendChild(d);
-  log.scrollTop = log.scrollHeight;
-}
-
-function evalProgressPct(stage, message) {
-  if (stage === 'fetch')  return (message && !/^Fetching|^Using/i.test(message)) ? 35 : 10;
-  if (stage === 'score')  return (message && !/^Scoring/i.test(message))          ? 80 : 45;
-  if (stage === 'save')   return 95;
-  return null;
-}
-
-function updateAddJobBtn(pct, label) {
-  const btn = document.getElementById('add-job-submit');
-  if (!btn) return;
-  btn.style.backgroundColor = progressColor(pct);
-  document.getElementById('add-job-submit-label').textContent = `${label}… ${pct}%`;
-}
-
-function resetAddJobBtn(label = 'Scrape & Add') {
-  const btn = document.getElementById('add-job-submit');
-  if (!btn) return;
-  btn.disabled = false;
-  btn.style.removeProperty('background-color');
-  document.getElementById('add-job-submit-label').textContent = label;
-}
-
-socket.on('eval-progress', ({ url, stage, message }) => {
-  if (url !== _addJobUrl) return;
-  const label = EVAL_STAGE_LABELS[stage] || stage;
-  addJobLog('ok', `${label}: ${message || '…'}`);
-  const pct = evalProgressPct(stage, message);
-  if (pct != null) updateAddJobBtn(pct, label);
-});
-
-socket.on('eval-complete', async ({ url, alreadyExists, company, title: role, score }) => {
-  if (url !== _addJobUrl) return;
-  _addJobUrl = null;
-  const btn = document.getElementById('add-job-submit');
-  if (btn) btn.style.backgroundColor = '#059669';
-  if (alreadyExists) {
-    document.getElementById('add-job-submit-label').textContent = '✓ Already tracked';
-    addJobLog('warning', 'Already in tracker — no duplicate added.');
-  } else {
-    const scoreStr = score != null ? ` · score ${score}` : '';
-    document.getElementById('add-job-submit-label').textContent = '✓ Added';
-    addJobLog('ok', `✓ Added: ${company || 'Unknown'} — ${role || 'Unknown'}${scoreStr}`);
-  }
-  setTimeout(() => resetAddJobBtn('Add Another'), 1500);
-  // Reload data so the new job appears in the table
-  const data = await fetchDashboard();
-  allJobs    = data.jobs || [];
-  dashboardMeta = createDashboardMeta(data);
-  invalidateWorkspaceCaches();
-  applyOppFilters();
-  renderInterviews();
-  renderRejected();
-  renderDashboard();
-});
-
-socket.on('eval-error', ({ url, message }) => {
-  if (url !== _addJobUrl) return;
-  _addJobUrl = null;
-  addJobLog('error', 'Error: ' + message);
-  resetAddJobBtn('Retry');
-});
 
 function clearOppFilters() {
   document.getElementById('global-search').value = '';
@@ -1956,6 +1900,7 @@ async function refreshDashboardState() {
 }
 
 function renderAllViews() {
+  loadHome();
   renderDashboard();
   applyOppFilters();
   renderGmailAmbiguities();
@@ -1967,6 +1912,7 @@ function renderAllViews() {
   if (contactsWorkspace) renderContactsWorkspace();
   if (analyticsSummary) renderAnalyticsWorkspace();
   if (settingsHealth) renderSettingsWorkspace();
+  if (vaultData) renderVaultView();
 }
 
 function invalidateWorkspaceCaches() {
@@ -1975,6 +1921,7 @@ function invalidateWorkspaceCaches() {
   contactsWorkspace = null;
   analyticsSummary = null;
   settingsHealth = null;
+  vaultData = null;
 }
 
 function setupOperationalWorkspaces() {
@@ -2021,10 +1968,12 @@ function setupDelegatedWorkspaceActions() {
 }
 
 function renderWorkspaceView(viewName) {
+  if (viewName === 'home') loadHome();
   if (viewName === 'jobs') renderJobsWorkspace();
   if (viewName === 'resume') renderResumeWorkspace();
   if (viewName === 'outreach') renderOutreachWorkspace();
   if (viewName === 'contacts') renderContactsWorkspace();
+  if (viewName === 'vault') loadVault();
   if (viewName === 'analytics') renderAnalyticsWorkspace();
   if (viewName === 'settings') renderSettingsWorkspace();
 }
@@ -2040,8 +1989,18 @@ function workspaceErrorPanel(message) {
   return `<div class="p-4 text-sm text-rose-600 bg-rose-50 border border-rose-100 rounded-lg">${esc(message)}</div>`;
 }
 
-function showJobDetail(jobId, { push = true } = {}) {
+function showJobDetail(jobId, { push = true, tab = null } = {}) {
+  // Remember which list screen (Dashboard, Resume queue, Outreach, ...) the
+  // person came from, so "Back to list" returns them there with whatever
+  // filters/sort that screen already had (its DOM is never torn down when
+  // hidden, so those controls just keep their values) rather than always
+  // jumping to the generic Jobs tab.
+  const visible = VIEWS.find(v => !document.getElementById('view-' + v)?.hidden);
+  if (visible && visible !== 'jobs') jobDetailReturnView = visible;
+
+  const sameJob = currentJobDetailId === jobId;
   currentJobDetailId = jobId;
+  currentJobDetailTab = tab || (sameJob ? currentJobDetailTab : 'overview');
   showView('jobs', { push: false });
   if (push) history.pushState({ view: 'jobs', jobId }, '', `/jobs/${encodeURIComponent(jobId)}`);
   renderJobsWorkspace();
@@ -2057,7 +2016,8 @@ async function renderJobsWorkspace() {
     detailRoot.innerHTML = `<div class="bg-white rounded-xl border border-slate-200 shadow-sm p-4 text-sm text-slate-500">Loading job detail…</div>`;
     listRoot.innerHTML = '';
     try {
-      const job = await fetchJobDetail(currentJobDetailId);
+      const job = await fetchOpportunityWorkspace(currentJobDetailId);
+      currentJobDetailData = job;
       countEl.textContent = `${job.company || 'Unknown company'} · ${job.title || 'Unknown role'}`;
       detailRoot.innerHTML = renderJobDetailWorkspace(job);
       bindWorkflowActions(detailRoot);
@@ -2103,61 +2063,326 @@ async function renderJobsWorkspace() {
   });
 }
 
+// ─── Phase 4: Opportunity Workspace (tabbed) ───────────────────────────────
+const OPPORTUNITY_TABS = [
+  ['overview', 'Overview'],
+  ['fit', 'Fit'],
+  ['resume', 'Resume'],
+  ['contacts', 'Contacts'],
+  ['application', 'Application'],
+  ['interview', 'Interview'],
+  ['activity', 'Activity'],
+];
+
+// Mirrors lib/opportunity-stages.mjs's PIPELINE_STAGES/STAGE_LABELS (kept in
+// sync manually — this is UI-only display text, not validation; the server
+// is the source of truth and rejects an unsupported stage regardless).
+const PIPELINE_STAGE_OPTIONS = [
+  ['discovered', 'Discovered'],
+  ['qualified', 'Qualified'],
+  ['review', 'Review'],
+  ['pursuing', 'Pursuing'],
+  ['materials_ready', 'Materials Ready'],
+  ['applied', 'Applied'],
+  ['recruiter_screen', 'Recruiter Screen'],
+  ['interview', 'Interview'],
+  ['final_round', 'Final Round'],
+  ['offer', 'Offer'],
+  ['rejected', 'Rejected'],
+  ['withdrawn', 'Withdrawn'],
+  ['archived', 'Archived'],
+];
+
 function renderJobDetailWorkspace(job) {
-  const versions = Array.isArray(job.resumeVersions) ? job.resumeVersions : generatedResumeVersions(job);
-  const gmail = job.gmail || {};
+  // Pursue/Not Interested/Snooze reuse Phase 3's quick-decision endpoint,
+  // which acts specifically on the "review this opportunity" action — only
+  // meaningful before a decision has been made, so only shown then. Change
+  // Stage works at any stage.
+  const showEarlyStageActions = ['discovered', 'qualified'].includes(job.stage);
   return `<div class="space-y-4">
     <div class="flex items-center justify-between gap-3">
-      <button id="job-detail-back" class="text-xs font-semibold text-slate-500 border border-slate-200 rounded-lg px-3 py-1.5 hover:bg-slate-50">Back to jobs</button>
+      <button id="job-detail-back" class="text-xs font-semibold text-slate-500 border border-slate-200 rounded-lg px-3 py-1.5 hover:bg-slate-50">Back to list</button>
       <div class="flex items-center gap-2">
         ${job.url ? `<a href="${esc(job.url)}" target="_blank" rel="noopener" class="text-xs font-semibold text-blue-600 border border-blue-100 rounded-lg px-3 py-1.5 hover:bg-blue-50">Posting</a>` : ''}
         <button class="gen-btn bg-primary text-white text-xs font-semibold rounded-lg px-3 py-1.5 hover:opacity-90" data-id="${esc(job.id)}">Generate resume</button>
         <button class="job-detail-edit text-xs font-semibold text-slate-600 border border-slate-200 rounded-lg px-3 py-1.5 hover:bg-slate-50" data-id="${esc(job.id)}">Edit</button>
       </div>
     </div>
-    <div class="grid grid-cols-1 xl:grid-cols-[minmax(0,1fr)_320px] gap-4">
-      <div class="space-y-4">
-        <div class="bg-white rounded-xl border border-slate-200 shadow-sm p-4">
-          <div class="flex items-start justify-between gap-3 mb-3">
-            <div>
-              <p class="text-[10px] font-bold uppercase tracking-wide text-slate-400">Opportunity</p>
-              <h3 class="text-xl font-bold text-slate-900">${esc(job.company || 'Unknown company')}</h3>
-              <p class="text-sm text-slate-500">${esc(job.title || 'Unknown role')}</p>
-            </div>
-            ${statusBadge(job.status)}
-          </div>
-          <div class="grid grid-cols-2 md:grid-cols-5 gap-2 mb-4">
-            ${workspaceMetricCard('ATS', atsScoreLabel(job), atsScoreColor(job), job._scoreExplanations?.ats || fallbackScoreExplanation(job, 'ats'))}
-            ${workspaceMetricCard('OI', job._oi?.score ?? '—', 'text-slate-800', job._scoreExplanations?.oi || job._oi || fallbackScoreExplanation(job, 'oi'))}
-            ${workspaceMetricCard('Priority', job._search?.score == null ? '—' : `${job._search.score}%`, 'text-slate-800', job._scoreExplanations?.search || job._search || fallbackScoreExplanation(job, 'search'))}
-            ${workspaceMetricCard('Resumes', versions.length, 'text-slate-800')}
-            ${workspaceMetricCard('Contacts', (job.contacts || []).length, 'text-slate-800')}
-          </div>
-          ${buildDetailPanel(job)}
+    <div class="bg-white rounded-xl border border-slate-200 shadow-sm p-4">
+      <div class="flex items-start justify-between gap-3 mb-3 flex-wrap">
+        <div>
+          <p class="text-[10px] font-bold uppercase tracking-wide text-slate-400">Opportunity</p>
+          <h3 class="text-xl font-bold text-slate-900">${esc(job.company || 'Unknown company')}</h3>
+          <p class="text-sm text-slate-500">${esc(job.title || 'Unknown role')}</p>
         </div>
-        <div class="bg-white rounded-xl border border-slate-200 shadow-sm p-4">
-          <p class="text-label-caps font-label-caps text-slate-500 mb-3">GMAIL SIGNALS</p>
-          ${gmail.lastEmailDate ? `<div class="text-sm">
-            <p class="font-semibold text-slate-700">${esc(gmail.lastEmailSubject || 'Latest Gmail signal')}</p>
-            <p class="text-xs text-slate-400">${fmtDateTime(gmail.lastEmailDate)}</p>
-            <p class="text-xs text-slate-500 mt-2">${esc(gmail.lastEmailSnippet || '')}</p>
-          </div>` : '<p class="text-sm text-slate-400">No Gmail signal attached.</p>'}
+        ${statusBadge(job.status)}
+      </div>
+      <div class="flex flex-wrap gap-2 mb-3">
+        ${headerChip('Stage', esc(job.stageLabel || '—'))}
+        ${headerChip('Priority', esc(priorityChipText(job.priority)))}
+        ${headerChip('Fit', fitChipHtml(job))}
+        ${headerChip('Freshness', esc(freshnessChipText(job.freshness)))}
+      </div>
+      <div class="flex flex-wrap items-center gap-2">
+        ${showEarlyStageActions ? `
+          <button class="opp-quick-decision text-xs font-semibold text-emerald-700 border border-emerald-200 rounded-lg px-3 py-1.5 hover:bg-emerald-50" data-decision="pursue">Pursue</button>
+          <button class="opp-quick-decision text-xs font-semibold text-rose-700 border border-rose-200 rounded-lg px-3 py-1.5 hover:bg-rose-50" data-decision="not_interested">Not Interested</button>
+          <button class="opp-quick-decision text-xs font-semibold text-slate-600 border border-slate-200 rounded-lg px-3 py-1.5 hover:bg-slate-50" data-decision="snooze">Snooze</button>
+        ` : ''}
+        <select class="opp-change-stage text-xs font-semibold border border-slate-200 rounded-lg px-2 py-1.5 bg-white">
+          <option value="">Change stage…</option>
+          ${PIPELINE_STAGE_OPTIONS.map(([value, label]) => `<option value="${value}" ${job.stage === value ? 'selected' : ''}>${esc(label)}</option>`).join('')}
+        </select>
+      </div>
+      <p class="opp-action-error hidden text-xs text-rose-600 mt-2"></p>
+    </div>
+    <div class="border-b border-slate-200">
+      <nav class="flex flex-wrap gap-1 -mb-px">
+        ${OPPORTUNITY_TABS.map(([key, label]) => `<button class="opp-tab-btn text-xs font-semibold px-3 py-2 border-b-2 ${currentJobDetailTab === key ? 'border-primary text-primary' : 'border-transparent text-slate-500 hover:text-slate-700'}" data-tab="${key}">${label}</button>`).join('')}
+      </nav>
+    </div>
+    <div id="opp-tab-content">${renderOppTabContent(job, currentJobDetailTab)}</div>
+  </div>`;
+}
+
+function headerChip(label, valueHtml) {
+  return `<div class="bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5">
+    <p class="text-[9px] font-bold uppercase tracking-wide text-slate-400">${esc(label)}</p>
+    <p class="text-xs font-semibold text-slate-700">${valueHtml}</p>
+  </div>`;
+}
+
+function priorityChipText(priority) {
+  return priority ? statusDisplayLabel(priority) : 'Not set';
+}
+
+function fitChipHtml(job) {
+  const fit = job.fit;
+  if (fit?.available) return `${esc(String(fit.overallScore))}% · ${esc(fit.pursuitClassification)}`;
+  if (job.overallFit != null) return `${esc(String(job.overallFit))} <span class="text-slate-400 font-normal">(legacy score, not yet Phase 2-scored)</span>`;
+  return 'Not scored';
+}
+
+function freshnessChipText(freshness) {
+  if (!freshness?.bucket) return 'Unknown';
+  const label = freshness.bucket.charAt(0).toUpperCase() + freshness.bucket.slice(1);
+  return freshness.ageDays != null ? `${label} · ${freshness.ageDays}d old` : label;
+}
+
+function renderOppTabContent(job, tab) {
+  switch (tab) {
+    case 'fit': return renderFitTab(job);
+    case 'resume': return renderResumeTab(job);
+    case 'contacts': return renderContactWorkspace(job);
+    case 'application': return renderApplicationTab(job);
+    case 'interview': return renderInterviewTab(job);
+    case 'activity': return renderActivityTab(job);
+    default: return renderOverviewTab(job);
+  }
+}
+
+function overviewField(label, value) {
+  return `<div><p class="text-[10px] font-bold uppercase tracking-wide text-slate-400">${esc(label)}</p><p class="text-slate-700 font-medium">${esc(value)}</p></div>`;
+}
+
+function renderSummaryList(label, items) {
+  const list = Array.isArray(items) ? items : [];
+  if (!list.length) return '';
+  return `<div class="mb-3"><p class="text-[10px] font-bold uppercase tracking-wide text-slate-400 mb-1">${esc(label)}</p>
+    <ul class="text-xs text-slate-600 space-y-0.5 list-disc list-inside">${list.map(i => `<li>${esc(i)}</li>`).join('')}</ul></div>`;
+}
+
+function renderOverviewTab(job) {
+  const fit = job.fit;
+  const blockers = fit?.available ? fit.hardBlockers : (Array.isArray(job.hardBlockers) ? job.hardBlockers : []);
+  const summary = fit?.available ? fit.summary : null;
+  const gmail = job.gmail || {};
+  return `<div class="grid grid-cols-1 xl:grid-cols-[minmax(0,1fr)_320px] gap-4">
+    <div class="space-y-4">
+      <div class="bg-white rounded-xl border border-slate-200 shadow-sm p-4">
+        <p class="text-label-caps font-label-caps text-slate-500 mb-3">KEY DETAILS</p>
+        <div class="grid grid-cols-2 md:grid-cols-3 gap-3">
+          ${overviewField('Location', job.location || '—')}
+          ${overviewField('Remote', job.remoteStatus || '—')}
+          ${overviewField('Compensation', job.compensation || job.salary || '—')}
+          ${overviewField('Source', job.source || '—')}
+          ${overviewField('Discovered', fmtDate(job.discoveredDate || job.date_found))}
+          ${overviewField('Posted', job.postedDate ? fmtDate(job.postedDate) : '—')}
+          ${overviewField('Next Action', job.nextAction || nextActionLabel(job._workflow?.nextBestAction || 'review'))}
+          ${overviewField('Next Action Date', job.nextActionDate ? fmtDate(job.nextActionDate) : '—')}
         </div>
       </div>
-      <div class="space-y-4">
-        <div class="bg-white rounded-xl border border-slate-200 shadow-sm p-4">
-          <p class="text-label-caps font-label-caps text-slate-500 mb-2">NEXT ACTION</p>
-          <p class="text-lg font-bold text-slate-800">${esc(nextActionLabel(job._workflow?.nextBestAction || 'review'))}</p>
-          ${job._workflow?.staleness?.stale ? `<p class="text-xs text-amber-700 mt-1">${esc(workflowStaleLabel(job._workflow.staleness))}</p>` : ''}
-        </div>
-        <div class="bg-white rounded-xl border border-slate-200 shadow-sm p-4">
-          <p class="text-label-caps font-label-caps text-slate-500 mb-3">RESUME VERSIONS</p>
-          ${versions.length ? versions.slice(0, 8).map(version => `<div class="border-b border-slate-100 last:border-0 py-2">
-            <a href="${esc(version.docxUrl)}" download class="text-xs font-semibold text-blue-600 hover:underline">${esc(version.fileName)}</a>
-            <p class="text-[11px] text-slate-400">${fmtDateTime(version.generatedAt)} · ${esc(resumeVersionScoreLabel(version))}</p>
-          </div>`).join('') : '<p class="text-sm text-slate-400">No generated resume yet.</p>'}
-        </div>
+      ${blockers && blockers.length ? `<div class="bg-rose-50 border border-rose-200 rounded-xl p-4">
+        <p class="text-label-caps font-label-caps text-rose-700 mb-2">BLOCKERS</p>
+        <ul class="space-y-1 text-xs text-rose-700 list-disc list-inside">${blockers.map(b => `<li>${esc(typeof b === 'string' ? b : b.description || '')}</li>`).join('')}</ul>
+      </div>` : ''}
+      ${summary ? `<div class="bg-white rounded-xl border border-slate-200 shadow-sm p-4">
+        <p class="text-label-caps font-label-caps text-slate-500 mb-2">WHY YOU FIT <span class="text-slate-400 font-normal normal-case">(Phase 2 fit analysis — see the Fit tab for full detail)</span></p>
+        ${renderSummaryList('Strong matches', summary.whyYouFit)}
+        ${renderSummaryList('Concerns', summary.concerns)}
+        ${renderSummaryList('Unknowns', summary.unknowns)}
+      </div>` : `<div class="bg-white rounded-xl border border-slate-200 shadow-sm p-4 text-xs text-slate-400">${esc(fit?.reason || 'Fit analysis needs a saved job description — see the Fit tab.')}</div>`}
+      <div class="bg-white rounded-xl border border-slate-200 shadow-sm p-4">
+        ${buildDetailPanel(job)}
       </div>
+    </div>
+    <div class="space-y-4">
+      <div class="bg-white rounded-xl border border-slate-200 shadow-sm p-4">
+        <p class="text-label-caps font-label-caps text-slate-500 mb-3">GMAIL SIGNALS</p>
+        ${gmail.lastEmailDate ? `<div class="text-sm">
+          <p class="font-semibold text-slate-700">${esc(gmail.lastEmailSubject || 'Latest Gmail signal')}</p>
+          <p class="text-xs text-slate-400">${fmtDateTime(gmail.lastEmailDate)}</p>
+          <p class="text-xs text-slate-500 mt-2">${esc(gmail.lastEmailSnippet || '')}</p>
+        </div>` : '<p class="text-sm text-slate-400">No Gmail signal attached.</p>'}
+      </div>
+    </div>
+  </div>`;
+}
+
+const FIT_TIER_COLOR = {
+  strong_match: 'bg-emerald-50 text-emerald-700',
+  partial_match: 'bg-amber-50 text-amber-700',
+  unknown: 'bg-slate-100 text-slate-600',
+  gap: 'bg-rose-50 text-rose-700',
+  blocker: 'bg-rose-100 text-rose-800',
+};
+
+function renderFitTab(job) {
+  const fit = job.fit;
+  if (!fit?.available) {
+    return `<div class="bg-white rounded-xl border border-slate-200 shadow-sm p-6 text-sm text-slate-500">
+      <p class="font-semibold text-slate-700 mb-1">Fit analysis unavailable</p>
+      <p>${esc(fit?.reason || 'No usable job description saved for this opportunity yet.')}</p>
+    </div>`;
+  }
+  return `<div class="space-y-4">
+    <div class="bg-white rounded-xl border border-slate-200 shadow-sm p-4 flex flex-wrap items-center gap-4">
+      ${workspaceMetricCard('Overall Fit', fit.overallScore + '%', 'text-slate-800')}
+      ${workspaceMetricCard('Classification', fit.pursuitClassification, 'text-slate-800')}
+      <div>
+        <p class="text-[10px] font-bold uppercase tracking-wide text-slate-400">Confidence</p>
+        <p class="text-sm font-semibold text-slate-700">${esc(fit.confidence.level)}</p>
+        <p class="text-[11px] text-slate-400 max-w-xs">${esc(fit.confidence.reason)}</p>
+      </div>
+    </div>
+    <div class="bg-white rounded-xl border border-slate-200 shadow-sm overflow-x-auto">
+      <table class="w-full text-xs">
+        <thead><tr class="border-b border-slate-200 bg-slate-50">
+          <th class="text-left px-3 py-2 font-bold text-slate-500 uppercase tracking-wide">Requirement</th>
+          <th class="text-left px-3 py-2 font-bold text-slate-500 uppercase tracking-wide">Classification</th>
+          <th class="text-left px-3 py-2 font-bold text-slate-500 uppercase tracking-wide">Supporting evidence</th>
+        </tr></thead>
+        <tbody>${fit.classifications.map(c => `<tr class="border-b border-slate-100 align-top">
+          <td class="px-3 py-2 text-slate-700">${esc(c.label)}</td>
+          <td class="px-3 py-2"><span class="text-[10px] font-bold uppercase rounded px-1.5 py-0.5 ${FIT_TIER_COLOR[c.tier] || 'bg-slate-100 text-slate-600'}">${esc(c.tierLabel)}</span></td>
+          <td class="px-3 py-2 text-slate-500">${c.evidence.length ? c.evidence.map(e => esc(e)).join('<br>') : esc(c.reason)}</td>
+        </tr>`).join('')}</tbody>
+      </table>
+    </div>
+    ${fit.hardBlockers.length ? `<div class="bg-rose-50 border border-rose-200 rounded-xl p-4">
+      <p class="text-label-caps font-label-caps text-rose-700 mb-2">HARD BLOCKERS</p>
+      <ul class="text-xs text-rose-700 list-disc list-inside space-y-1">${fit.hardBlockers.map(b => `<li>${esc(b.description)}</li>`).join('')}</ul>
+    </div>` : ''}
+    ${fit.openQuestions.length ? `<div class="bg-white rounded-xl border border-slate-200 shadow-sm p-4">
+      <p class="text-label-caps font-label-caps text-slate-500 mb-3">OPEN QUESTIONS <span class="text-slate-400 font-normal normal-case">(resolves the Unknowns above)</span></p>
+      <div class="space-y-3">${fit.openQuestions.map(renderCandidateQuestion).join('')}</div>
+    </div>` : ''}
+  </div>`;
+}
+
+function renderCandidateQuestion(q) {
+  return `<div class="candidate-question border border-slate-100 rounded-lg p-3" data-question-id="${esc(q.id)}">
+    <p class="text-xs text-slate-700 mb-2">${esc(q.question)}</p>
+    <div class="flex flex-col sm:flex-row gap-2">
+      <input class="question-answer-input flex-1 bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-xs outline-none focus:ring-2 focus:ring-blue-600/20" placeholder="Your answer">
+      <button class="question-answer-btn text-xs font-semibold bg-primary text-white rounded-lg px-3 py-1.5 hover:opacity-90">Answer</button>
+    </div>
+    <p class="question-answer-error hidden text-xs text-rose-600 mt-1"></p>
+  </div>`;
+}
+
+function renderResumeTab(job) {
+  const versions = Array.isArray(job.resumeVersions) ? job.resumeVersions : generatedResumeVersions(job);
+  const ats = job._ats;
+  return `<div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+    <div class="bg-white rounded-xl border border-slate-200 shadow-sm p-4">
+      <p class="text-label-caps font-label-caps text-slate-500 mb-3">ATS SCORE / AUDIT</p>
+      <p class="text-h2 font-h2 ${atsScoreColor(job)} mb-1">${atsScoreLabel(job)}</p>
+      <p class="text-xs text-slate-500 mb-3">${ats ? `${ats.mapped.length} of ${ats.total} keywords matched` : 'Not yet scored — generate a resume to score it.'}</p>
+      ${ats?.missing?.length ? `<div><p class="text-[10px] font-bold uppercase tracking-wide text-slate-400 mb-1">Missing keywords</p>
+        <div class="flex flex-wrap gap-1.5">${ats.missing.slice(0, 15).map(m => `<span class="text-[11px] bg-rose-50 text-rose-600 rounded px-2 py-0.5">${esc(m.keyword)}</span>`).join('')}</div></div>` : ''}
+      <button class="gen-btn mt-3 bg-primary text-white text-xs font-semibold rounded-lg px-3 py-1.5 hover:opacity-90" data-id="${esc(job.id)}">${versions.length ? 'Regenerate resume' : 'Generate resume'}</button>
+    </div>
+    <div class="bg-white rounded-xl border border-slate-200 shadow-sm p-4">
+      <p class="text-label-caps font-label-caps text-slate-500 mb-3">GENERATED RESUMES</p>
+      ${versions.length ? versions.map(version => `<div class="border-b border-slate-100 last:border-0 py-2">
+        <a href="${esc(version.docxUrl)}" download class="text-xs font-semibold text-blue-600 hover:underline truncate block">${esc(version.fileName)}</a>
+        <p class="text-[11px] text-slate-400">${fmtDateTime(version.generatedAt)} · ${esc(resumeVersionScoreLabel(version))}</p>
+      </div>`).join('') : '<p class="text-sm text-slate-400">No generated resume yet.</p>'}
+    </div>
+  </div>`;
+}
+
+function renderApplicationTab(job) {
+  const applied = Boolean(job.appliedDate) || job.status === 'applied' || !['discovered', 'qualified', 'review', 'pursuing', 'materials_ready'].includes(job.stage);
+  return `<div class="application-panel bg-white rounded-xl border border-slate-200 shadow-sm p-4 max-w-2xl">
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-3 mb-4">
+      ${overviewField('Applied?', applied ? 'Yes' : 'No')}
+      ${overviewField('Current Stage', job.stageLabel || '—')}
+    </div>
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+      <label class="text-xs text-slate-500">Applied date
+        <input type="date" class="app-applied-date mt-1 w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-xs outline-none focus:ring-2 focus:ring-blue-600/20" value="${esc((job.appliedDate || '').slice(0, 10))}">
+      </label>
+      <label class="text-xs text-slate-500">Application source
+        <input class="app-source mt-1 w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-xs outline-none focus:ring-2 focus:ring-blue-600/20" value="${esc(job.applicationSource || '')}">
+      </label>
+      <label class="text-xs text-slate-500">Resume used
+        <input class="app-resume-version mt-1 w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-xs outline-none focus:ring-2 focus:ring-blue-600/20" value="${esc(job.resumeVersion || '')}">
+      </label>
+      <label class="text-xs text-slate-500">Cover letter used
+        <input class="app-cover-letter mt-1 w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-xs outline-none focus:ring-2 focus:ring-blue-600/20" value="${esc(job.coverLetterVersion || '')}">
+      </label>
+      <label class="text-xs text-slate-500">Referral
+        <input class="app-referral mt-1 w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-xs outline-none focus:ring-2 focus:ring-blue-600/20" value="${esc(job.referral || '')}">
+      </label>
+    </div>
+    <button class="application-save-btn mt-3 bg-primary text-white text-xs font-semibold rounded-lg px-3 py-1.5 hover:opacity-90">Save</button>
+    <p class="application-save-error hidden text-xs text-rose-600 mt-2"></p>
+  </div>`;
+}
+
+function renderInterviewTab(job) {
+  const interviewEvents = (job.activity || []).filter(e => e.type === 'interview_scheduled');
+  const inInterviewStage = ['recruiter_screen', 'interview', 'final_round'].includes(job.stage);
+  if (!interviewEvents.length && !inInterviewStage) {
+    return `<div class="bg-white rounded-xl border border-slate-200 shadow-sm p-6 text-sm text-slate-400">No interview activity recorded yet.</div>`;
+  }
+  return `<div class="bg-white rounded-xl border border-slate-200 shadow-sm p-4 space-y-3">
+    ${inInterviewStage ? `<p class="text-xs font-semibold text-amber-700 bg-amber-50 rounded px-3 py-2 inline-block">Currently in ${esc(job.stageLabel || job.stage)}</p>` : ''}
+    ${interviewEvents.length ? `<div>
+      <p class="text-[10px] font-bold uppercase tracking-wide text-slate-400 mb-2">Interview Events</p>
+      ${interviewEvents.slice().reverse().map(e => `<div class="border-b border-slate-100 last:border-0 py-2">
+        <p class="text-xs font-semibold text-slate-700">${esc(e.label || 'Interview scheduled')}</p>
+        <p class="text-[11px] text-slate-400">${fmtDateTime(e.at)}${e.note ? ' · ' + esc(e.note) : ''}</p>
+      </div>`).join('')}
+    </div>` : ''}
+  </div>`;
+}
+
+function renderActivityTab(job) {
+  const events = [...(job.activity || [])].reverse(); // newest first by default
+  return `<div class="space-y-4">
+    ${renderWorkflowActions(job)}
+    <div class="bg-white rounded-xl border border-slate-200 shadow-sm divide-y divide-slate-100">
+      ${events.length ? events.map(e => `<div class="flex items-center justify-between gap-3 px-4 py-3">
+        <div class="min-w-0">
+          <p class="text-sm font-semibold text-slate-700">${esc(workflowEventLabel(e.type))}</p>
+          ${e.label || e.note ? `<p class="text-xs text-slate-400 truncate">${esc(e.note || e.label)}</p>` : ''}
+          ${e.from || e.to ? `<p class="text-xs text-slate-400">${esc(e.from || '')} → ${esc(e.to || '')}</p>` : ''}
+        </div>
+        <p class="text-xs text-slate-400 shrink-0">${fmtDateTime(e.at)}</p>
+      </div>`).join('') : '<p class="p-4 text-sm text-slate-400">No activity recorded yet.</p>'}
     </div>
   </div>`;
 }
@@ -2165,11 +2390,126 @@ function renderJobDetailWorkspace(job) {
 function bindJobDetailActions(root, job) {
   root.querySelector('#job-detail-back')?.addEventListener('click', () => {
     currentJobDetailId = '';
-    history.pushState({ view: 'jobs' }, '', '/jobs');
-    renderJobsWorkspace();
+    showView(jobDetailReturnView || 'jobs');
   });
   root.querySelector('.job-detail-edit')?.addEventListener('click', () => openEditModal(job.id));
   root.querySelector('.gen-btn')?.addEventListener('click', event => triggerGenerate(job.id, event.currentTarget));
+
+  root.querySelectorAll('.opp-tab-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      currentJobDetailTab = btn.dataset.tab;
+      const content = root.querySelector('#opp-tab-content');
+      if (content && currentJobDetailData) {
+        content.innerHTML = renderOppTabContent(currentJobDetailData, currentJobDetailTab);
+        bindWorkflowActions(content);
+        bindContactWorkspace(content);
+        bindOppTabContentActions(content);
+      }
+      root.querySelectorAll('.opp-tab-btn').forEach(b => {
+        b.className = `opp-tab-btn text-xs font-semibold px-3 py-2 border-b-2 ${b.dataset.tab === currentJobDetailTab ? 'border-primary text-primary' : 'border-transparent text-slate-500 hover:text-slate-700'}`;
+      });
+    });
+  });
+
+  root.querySelectorAll('.opp-quick-decision').forEach(btn => {
+    btn.addEventListener('click', () => submitOppQuickDecision(root, job.id, btn.dataset.decision));
+  });
+  root.querySelector('.opp-change-stage')?.addEventListener('change', event => {
+    const stage = event.currentTarget.value;
+    if (stage) submitOppStageChange(root, job.id, stage);
+  });
+
+  bindOppTabContentActions(root.querySelector('#opp-tab-content'));
+}
+
+function bindOppTabContentActions(root) {
+  if (!root) return;
+  root.querySelector('.application-save-btn')?.addEventListener('click', () => submitApplicationTab(root, currentJobDetailId));
+  root.querySelectorAll('.candidate-question').forEach(panel => {
+    panel.querySelector('.question-answer-btn')?.addEventListener('click', () => submitQuestionAnswer(panel));
+  });
+}
+
+async function submitOppQuickDecision(root, id, decision) {
+  const errorEl = root.querySelector('.opp-action-error');
+  errorEl?.classList.add('hidden');
+  try {
+    await postQuickDecision(id, decision);
+    invalidateWorkspaceCaches();
+    showJobDetail(id, { push: false });
+  } catch (e) {
+    if (errorEl) { errorEl.textContent = e.message; errorEl.classList.remove('hidden'); }
+  }
+}
+
+async function submitOppStageChange(root, id, stage) {
+  const errorEl = root.querySelector('.opp-action-error');
+  errorEl?.classList.add('hidden');
+  try {
+    await postOpportunityStage(id, stage);
+    invalidateWorkspaceCaches();
+    showJobDetail(id, { push: false });
+  } catch (e) {
+    if (errorEl) { errorEl.textContent = e.message; errorEl.classList.remove('hidden'); }
+  }
+}
+
+async function submitApplicationTab(root, id) {
+  const btn = root.querySelector('.application-save-btn');
+  const errorEl = root.querySelector('.application-save-error');
+  const body = {
+    appliedDate: root.querySelector('.app-applied-date')?.value || '',
+    applicationSource: root.querySelector('.app-source')?.value.trim() || '',
+    resumeVersion: root.querySelector('.app-resume-version')?.value.trim() || '',
+    coverLetterVersion: root.querySelector('.app-cover-letter')?.value.trim() || '',
+    referral: root.querySelector('.app-referral')?.value.trim() || '',
+  };
+  btn.disabled = true;
+  btn.textContent = 'Saving...';
+  errorEl?.classList.add('hidden');
+  try {
+    await patchOpportunity(id, body);
+    invalidateWorkspaceCaches();
+    showJobDetail(id, { push: false });
+  } catch (e) {
+    if (errorEl) { errorEl.textContent = e.message; errorEl.classList.remove('hidden'); }
+    btn.disabled = false;
+    btn.textContent = 'Save';
+  }
+}
+
+async function submitQuestionAnswer(panel) {
+  const btn = panel.querySelector('.question-answer-btn');
+  const input = panel.querySelector('.question-answer-input');
+  const errorEl = panel.querySelector('.question-answer-error');
+  const answer = input?.value.trim();
+  if (!answer) {
+    if (errorEl) { errorEl.textContent = 'Enter an answer first.'; errorEl.classList.remove('hidden'); }
+    return;
+  }
+  btn.disabled = true;
+  btn.textContent = 'Saving...';
+  errorEl?.classList.add('hidden');
+  try {
+    await answerCandidateQuestion(panel.dataset.questionId, answer);
+    // Phase 5: offer to turn this answer into persisted, verified evidence
+    // so the same requirement is never asked about again — only when Brian
+    // explicitly confirms; answering a question never silently creates
+    // evidence on its own.
+    if (window.confirm('Save this answer as verified evidence in your Career Profile too, so Career-Ops stops asking about it?')) {
+      try {
+        await promoteQuestionToEvidence(panel.dataset.questionId);
+      } catch (e) {
+        window.alert('Answered, but could not save it as evidence: ' + e.message);
+      }
+    }
+    invalidateWorkspaceCaches();
+    showJobDetail(currentJobDetailId, { push: false, tab: 'fit' });
+  } catch (e) {
+    if (errorEl) { errorEl.textContent = e.message; errorEl.classList.remove('hidden'); }
+    btn.disabled = false;
+    btn.textContent = 'Answer';
+  }
 }
 
 async function loadResumeWorkspace() {
@@ -3351,6 +3691,469 @@ function set(id, val) {
 
 function esc(str) {
   return String(str ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+// ─── Home (Phase 3: Daily Command Center) ──────────────────────────────────────
+
+const ACTION_TYPE_ICON = {
+  review_opportunity: 'visibility',
+  answer_question: 'help',
+  generate_resume: 'description',
+  review_resume: 'fact_check',
+  apply: 'send',
+  find_contact: 'person_search',
+  follow_up: 'forum',
+  prepare_interview: 'event_available',
+  record_outcome: 'flag',
+};
+
+async function loadHome() {
+  try {
+    homeData = await fetchHome();
+    renderHome();
+  } catch (e) {
+    const sub = document.getElementById('home-subtitle');
+    if (sub) sub.textContent = 'Failed to load: ' + e.message;
+  }
+}
+
+function actionCard(action, { compact = false } = {}) {
+  const icon = ACTION_TYPE_ICON[action.type] || 'task_alt';
+  return `<div class="action-card border border-slate-200 rounded-lg p-3 flex items-start gap-3 ${compact ? '' : 'bg-slate-50'}" data-action-id="${esc(action.id)}" data-opportunity-id="${esc(action.opportunityId)}" data-action-type="${esc(action.type)}">
+    <span class="material-symbols-outlined text-slate-400 text-xl mt-0.5">${icon}</span>
+    <div class="min-w-0 flex-1">
+      <p class="text-sm font-semibold text-on-surface truncate">${esc(action.title)}</p>
+      <p class="text-xs text-slate-500 mt-0.5">${esc(action.reason || '')}</p>
+    </div>
+    <button class="action-complete-btn shrink-0 text-xs font-semibold text-blue-600 hover:underline px-2 py-1" data-id="${esc(action.id)}" data-opp="${esc(action.opportunityId)}" data-type="${esc(action.type)}">
+      Continue
+    </button>
+  </div>`;
+}
+
+// Phase 4: which Opportunity Workspace tab a given action type is "about" —
+// so a Command Center action opens straight to the relevant tab instead of
+// always landing on Overview.
+const ACTION_TYPE_TAB = {
+  review_opportunity: 'overview',
+  answer_question: 'fit',
+  generate_resume: 'resume',
+  review_resume: 'resume',
+  apply: 'application',
+  find_contact: 'contacts',
+  follow_up: 'application',
+  prepare_interview: 'interview',
+  record_outcome: 'activity',
+};
+
+function topPriorityCard(action) {
+  if (!action) return '';
+  return `<div class="bg-white p-5 rounded-xl border-2 border-blue-200 shadow-sm">
+    <p class="text-label-caps font-label-caps text-blue-600 mb-2">DO THIS FIRST</p>
+    <p class="text-h2 font-h2 text-on-surface mb-1">${esc(action.title)}</p>
+    <p class="text-sm text-slate-500 mb-4">${esc(action.reason || '')}</p>
+    <button id="home-top-priority-btn" class="flex items-center gap-1.5 bg-primary text-white text-sm font-semibold px-4 py-2 rounded-lg hover:opacity-90 transition-opacity"
+      data-id="${esc(action.id)}" data-opp="${esc(action.opportunityId)}" data-type="${esc(action.type)}">
+      Continue
+      <span class="material-symbols-outlined text-lg">arrow_forward</span>
+    </button>
+  </div>`;
+}
+
+function pipelineStatTile(label, value) {
+  return `<div class="bg-slate-50 rounded-lg p-3 text-center">
+    <p class="text-h2 font-h2 text-on-surface">${value}</p>
+    <p class="text-xs text-slate-500 uppercase tracking-wide">${esc(label)}</p>
+  </div>`;
+}
+
+function renderHome() {
+  if (!homeData) return;
+  const sub = document.getElementById('home-subtitle');
+  const caughtUpPanel = document.getElementById('home-caught-up');
+  const content = document.getElementById('home-content');
+
+  if (homeData.caughtUp) {
+    if (sub) sub.textContent = "Nothing urgent right now.";
+    caughtUpPanel.classList.remove('hidden');
+    content.classList.add('hidden');
+    return;
+  }
+  caughtUpPanel.classList.add('hidden');
+  content.classList.remove('hidden');
+  if (sub) sub.textContent = `${homeData.startMyDayQueue.length} thing${homeData.startMyDayQueue.length === 1 ? '' : 's'} to work through today.`;
+
+  document.getElementById('home-top-priority-wrap').innerHTML = topPriorityCard(homeData.topPriority);
+
+  const nextList = document.getElementById('home-next-list');
+  nextList.innerHTML = homeData.next.length
+    ? homeData.next.map(a => actionCard(a, { compact: true })).join('')
+    : `<p class="text-sm text-slate-400">Nothing else queued.</p>`;
+
+  const followUpsList = document.getElementById('home-followups-list');
+  followUpsList.innerHTML = homeData.followUps.length
+    ? homeData.followUps.map(a => actionCard(a, { compact: true })).join('')
+    : `<p class="text-sm text-slate-400">No follow-ups due.</p>`;
+
+  const { discovered, qualified, worthReviewing } = homeData.newOpportunities;
+  document.getElementById('home-new-opportunities-text').textContent =
+    `${discovered} discovered · ${qualified} qualified · ${worthReviewing} worth reviewing`;
+
+  const snap = homeData.pipelineSnapshot;
+  document.getElementById('home-pipeline-snapshot').innerHTML = [
+    pipelineStatTile('Applied', snap.applied),
+    pipelineStatTile('Recruiter Screens', snap.recruiterScreens),
+    pipelineStatTile('Interviews', snap.interviews),
+    pipelineStatTile('Offers', snap.offers),
+  ].join('');
+}
+
+async function completeActionFromHome(id, opportunityId, type) {
+  await postActionDecision(id, 'complete');
+  await loadHome();
+  if (opportunityId) showJobDetail(opportunityId, { tab: ACTION_TYPE_TAB[type] || 'overview' });
+}
+
+function setupHome() {
+  document.getElementById('home-content')?.addEventListener('click', async (e) => {
+    const btn = e.target.closest('.action-complete-btn, #home-top-priority-btn');
+    if (!btn) return;
+    await completeActionFromHome(btn.dataset.id, btn.dataset.opp, btn.dataset.type);
+  });
+
+  document.getElementById('home-review-btn')?.addEventListener('click', () => showView('dashboard'));
+  document.getElementById('home-caught-up')?.querySelector('.home-review-new-btn')
+    ?.addEventListener('click', () => showView('dashboard'));
+
+  document.getElementById('start-my-day-btn')?.addEventListener('click', startMyDay);
+  document.getElementById('start-day-close')?.addEventListener('click', closeStartMyDay);
+  document.getElementById('start-day-backdrop')?.addEventListener('click', closeStartMyDay);
+  document.getElementById('start-day-skip')?.addEventListener('click', () => advanceStartMyDay('skip'));
+  document.getElementById('start-day-snooze')?.addEventListener('click', () => advanceStartMyDay('snooze'));
+  document.getElementById('start-day-continue')?.addEventListener('click', () => advanceStartMyDay('complete'));
+  document.getElementById('start-day-quick-decisions')?.addEventListener('click', async (e) => {
+    const btn = e.target.closest('.quick-decision-btn');
+    if (!btn) return;
+    const current = startDayQueue[startDayIndex];
+    if (current) await postQuickDecision(current.opportunityId, btn.dataset.decision);
+    await advanceStartMyDay(null);
+  });
+}
+
+function startMyDay() {
+  startDayQueue = (homeData?.startMyDayQueue || []).slice();
+  startDayIndex = 0;
+  if (!startDayQueue.length) return;
+  document.getElementById('start-day-modal').classList.remove('hidden');
+  renderStartMyDayStep();
+}
+
+function closeStartMyDay() {
+  document.getElementById('start-day-modal').classList.add('hidden');
+  loadHome();
+}
+
+function renderStartMyDayStep() {
+  const total = startDayQueue.length;
+  const action = startDayQueue[startDayIndex];
+  if (!action) { closeStartMyDay(); return; }
+  document.getElementById('start-day-progress').textContent = `Task ${startDayIndex + 1} of ${total}`;
+  document.getElementById('start-day-title').textContent = action.title;
+  document.getElementById('start-day-reason').textContent = action.reason || '';
+  document.getElementById('start-day-quick-decisions').classList.toggle('hidden', action.type !== 'review_opportunity');
+  document.getElementById('start-day-continue').classList.toggle('hidden', action.type === 'review_opportunity');
+}
+
+async function advanceStartMyDay(decision) {
+  const action = startDayQueue[startDayIndex];
+  try {
+    if (decision && action) await postActionDecision(action.id, decision);
+  } catch { /* keep moving even if the decision call fails */ }
+  startDayIndex += 1;
+  if (startDayIndex >= startDayQueue.length) {
+    closeStartMyDay();
+    return;
+  }
+  renderStartMyDayStep();
+}
+
+// ─── Phase 5: Career Evidence Vault ────────────────────────────────────────
+// UI over the Phase 0 canonical candidate fact files (data/candidate/*.json)
+// via lib/evidence-vault.mjs — never a second candidate database, and never
+// silently flips verified/allowed_in_resume; both are explicit checkboxes
+// the person sets themselves on add/edit.
+const SECTION_CATEGORY = {
+  experience: 'employer',
+  achievements: 'achievement',
+  skills: 'skill',
+  certifications: 'certification',
+  metrics: 'metric',
+  stories: 'story',
+};
+const SECTION_LABEL = {
+  experience: 'Experience',
+  achievements: 'Achievement',
+  skills: 'Skill',
+  certifications: 'Certification',
+  metrics: 'Metric',
+  stories: 'Story',
+};
+let editingVaultId = null;
+
+async function loadVault() {
+  try {
+    vaultData = await fetchEvidenceVault();
+    renderVaultView();
+  } catch (e) {
+    const root = document.getElementById('vault-content-root');
+    if (root) root.innerHTML = `<div class="text-sm text-rose-600">${esc(e.message)}</div>`;
+  }
+}
+
+function vaultFieldSchema(category) {
+  if (category === 'story') {
+    return [
+      { key: 'situation', label: 'Situation', type: 'textarea' },
+      { key: 'task', label: 'Task', type: 'textarea' },
+      { key: 'action', label: 'Action', type: 'textarea' },
+      { key: 'result', label: 'Result', type: 'textarea' },
+      { key: 'employer', label: 'Employer / Context', type: 'text' },
+      { key: 'source', label: 'Source', type: 'text' },
+      { key: 'tags', label: 'Tags (comma separated)', type: 'tags' },
+      { key: 'verified', label: 'Verified', type: 'checkbox' },
+    ];
+  }
+  const fields = [
+    { key: 'fact', label: category === 'skill' ? 'Skill' : 'Fact', type: 'textarea' },
+    { key: 'employer', label: 'Employer / Context', type: 'text' },
+    { key: 'source', label: 'Source', type: 'text' },
+    { key: 'tags', label: 'Tags (comma separated)', type: 'tags' },
+    { key: 'verified', label: 'Verified', type: 'checkbox' },
+    { key: 'allowed_in_resume', label: 'Allowed in resume', type: 'checkbox' },
+  ];
+  if (category === 'skill') {
+    fields.push(
+      { key: 'evidence', label: 'Evidence', type: 'text' },
+      { key: 'experienceDepth', label: 'Experience / Depth', type: 'text' },
+      { key: 'lastUsed', label: 'Last used', type: 'text' },
+    );
+  }
+  return fields;
+}
+
+function renderVaultFieldInputs(category, record = {}) {
+  return vaultFieldSchema(category).map(f => {
+    const val = record[f.key];
+    if (f.type === 'checkbox') {
+      return `<label class="flex items-center gap-2 text-xs text-slate-600 mb-2">
+        <input type="checkbox" class="vault-field" data-field="${f.key}" ${val ? 'checked' : ''}> ${esc(f.label)}
+      </label>`;
+    }
+    if (f.type === 'textarea') {
+      return `<label class="block text-xs text-slate-500 mb-2">${esc(f.label)}
+        <textarea class="vault-field mt-1 w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-xs outline-none focus:ring-2 focus:ring-blue-600/20" rows="2" data-field="${f.key}">${esc(val || '')}</textarea>
+      </label>`;
+    }
+    if (f.type === 'tags') {
+      const joined = Array.isArray(val) ? val.join(', ') : '';
+      return `<label class="block text-xs text-slate-500 mb-2">${esc(f.label)}
+        <input class="vault-field mt-1 w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-xs outline-none focus:ring-2 focus:ring-blue-600/20" data-field="${f.key}" value="${esc(joined)}">
+      </label>`;
+    }
+    return `<label class="block text-xs text-slate-500 mb-2">${esc(f.label)}
+      <input class="vault-field mt-1 w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-xs outline-none focus:ring-2 focus:ring-blue-600/20" data-field="${f.key}" value="${esc(val || '')}">
+    </label>`;
+  }).join('');
+}
+
+function collectVaultFieldValues(root, category) {
+  const out = {};
+  vaultFieldSchema(category).forEach(f => {
+    const el = root.querySelector(`[data-field="${f.key}"]`);
+    if (!el) return;
+    if (f.type === 'checkbox') out[f.key] = el.checked;
+    else if (f.type === 'tags') out[f.key] = el.value.split(',').map(s => s.trim()).filter(Boolean);
+    else out[f.key] = el.value.trim();
+  });
+  return out;
+}
+
+function vaultVerifiedBadge(verified) {
+  return `<span class="text-[10px] font-bold uppercase rounded px-1.5 py-0.5 ${verified ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-700'}">${verified ? 'Verified' : 'Unverified'}</span>`;
+}
+
+function vaultResumeBadge(allowed) {
+  return `<span class="text-[10px] font-bold uppercase rounded px-1.5 py-0.5 ${allowed ? 'bg-blue-50 text-blue-700' : 'bg-slate-100 text-slate-500'}">${allowed ? 'Allowed' : 'Not allowed'}</span>`;
+}
+
+function vaultTagsHtml(tags) {
+  return (tags || []).map(t => `<span class="text-[10px] bg-slate-100 text-slate-600 rounded px-1.5 py-0.5 mr-1 inline-block mb-1">${esc(t)}</span>`).join('') || '<span class="text-slate-300 text-xs">—</span>';
+}
+
+function vaultEditFieldsBlock(section, record) {
+  const category = SECTION_CATEGORY[section];
+  return `${renderVaultFieldInputs(category, record)}
+    <div class="flex items-center gap-2 mt-2">
+      <button class="vault-save-btn bg-primary text-white text-xs font-semibold rounded-lg px-3 py-1.5 hover:opacity-90" data-id="${esc(record.id)}">Save</button>
+      <button class="vault-cancel-btn text-xs font-semibold text-slate-500 border border-slate-200 rounded-lg px-3 py-1.5 hover:bg-slate-50">Cancel</button>
+    </div>
+    <p class="vault-edit-error hidden text-xs text-rose-600 mt-2"></p>`;
+}
+
+function vaultDisplayRow(section, record) {
+  const category = SECTION_CATEGORY[section];
+  let title = esc(record.fact || '');
+  if (category === 'skill') {
+    const extra = [];
+    if (record.experienceDepth) extra.push(`Depth: ${record.experienceDepth}`);
+    if (record.lastUsed) extra.push(`Last used: ${record.lastUsed}`);
+    if (record.evidence) extra.push(`Evidence: ${record.evidence}`);
+    if (extra.length) title += `<div class="text-[11px] text-slate-400 mt-1">${esc(extra.join(' · '))}</div>`;
+  }
+  return `<tr class="border-b border-slate-100 align-top" data-record-id="${esc(record.id)}">
+    <td class="px-3 py-2 text-slate-700 max-w-sm">${title}</td>
+    <td class="px-3 py-2 text-slate-500">${esc(record.employer || '—')}</td>
+    <td class="px-3 py-2">${vaultVerifiedBadge(record.verified)}</td>
+    <td class="px-3 py-2 text-slate-400 text-[11px] max-w-[160px] truncate">${esc(record.source || '—')}</td>
+    <td class="px-3 py-2">${vaultResumeBadge(record.allowed_in_resume)}</td>
+    <td class="px-3 py-2">${vaultTagsHtml(record.tags)}</td>
+    <td class="px-3 py-2"><button class="vault-edit-btn text-xs font-semibold text-blue-600 hover:underline" data-id="${esc(record.id)}">Edit</button></td>
+  </tr>`;
+}
+
+function renderVaultFactTable(section, records) {
+  const category = SECTION_CATEGORY[section];
+  if (!records.length) return `<div class="bg-white rounded-xl border border-slate-200 shadow-sm p-6 text-sm text-slate-400">No records yet.</div>`;
+  return `<div class="bg-white rounded-xl border border-slate-200 shadow-sm overflow-x-auto">
+    <table class="w-full text-xs">
+      <thead><tr class="border-b border-slate-200 bg-slate-50">
+        <th class="text-left px-3 py-2 font-bold text-slate-500 uppercase tracking-wide">${category === 'skill' ? 'Skill' : 'Fact'}</th>
+        <th class="text-left px-3 py-2 font-bold text-slate-500 uppercase tracking-wide">Employer / Context</th>
+        <th class="text-left px-3 py-2 font-bold text-slate-500 uppercase tracking-wide">Verified</th>
+        <th class="text-left px-3 py-2 font-bold text-slate-500 uppercase tracking-wide">Source</th>
+        <th class="text-left px-3 py-2 font-bold text-slate-500 uppercase tracking-wide">Resume</th>
+        <th class="text-left px-3 py-2 font-bold text-slate-500 uppercase tracking-wide">Tags</th>
+        <th></th>
+      </tr></thead>
+      <tbody>${records.map(r => r.id === editingVaultId
+        ? `<tr data-record-id="${esc(r.id)}"><td colspan="7" class="px-3 py-3 bg-slate-50">${vaultEditFieldsBlock(section, r)}</td></tr>`
+        : vaultDisplayRow(section, r)).join('')}</tbody>
+    </table>
+  </div>`;
+}
+
+function vaultStoryField(label, value) {
+  return `<div class="mb-2"><p class="text-[10px] font-bold uppercase tracking-wide text-slate-400">${esc(label)}</p><p class="text-xs text-slate-700 whitespace-pre-wrap">${esc(value || '—')}</p></div>`;
+}
+
+function renderVaultStories(records) {
+  if (!records.length) return `<div class="bg-white rounded-xl border border-slate-200 shadow-sm p-6 text-sm text-slate-400">No stories yet. Add one to capture a STAR example for interview prep.</div>`;
+  return `<div class="space-y-3">${records.map(r => `<div class="bg-white rounded-xl border border-slate-200 shadow-sm p-4" data-record-id="${esc(r.id)}">
+    ${r.id === editingVaultId ? vaultEditFieldsBlock('stories', r) : `
+      <div class="flex items-center justify-between gap-2 mb-2">
+        ${vaultVerifiedBadge(r.verified)}
+        <button class="vault-edit-btn text-xs font-semibold text-blue-600 hover:underline" data-id="${esc(r.id)}">Edit</button>
+      </div>
+      ${vaultStoryField('Situation', r.situation)}
+      ${vaultStoryField('Task', r.task)}
+      ${vaultStoryField('Action', r.action)}
+      ${vaultStoryField('Result', r.result)}
+      <div class="flex flex-wrap gap-1 mt-2">${vaultTagsHtml(r.tags)}</div>
+    `}
+  </div>`).join('')}</div>`;
+}
+
+function renderVaultTabContent() {
+  const root = document.getElementById('vault-content-root');
+  if (!root || !vaultData) return;
+  const records = vaultData[currentVaultTab] || [];
+  root.innerHTML = currentVaultTab === 'stories' ? renderVaultStories(records) : renderVaultFactTable(currentVaultTab, records);
+  bindVaultRowActions(root);
+}
+
+function renderVaultView() {
+  document.querySelectorAll('.vault-tab-btn').forEach(btn => {
+    const active = btn.dataset.vaultTab === currentVaultTab;
+    btn.className = `vault-tab-btn text-xs font-semibold px-3 py-2 border-b-2 ${active ? 'border-primary text-primary' : 'border-transparent text-slate-500 hover:text-slate-700'}`;
+  });
+  renderVaultTabContent();
+}
+
+function bindVaultRowActions(root) {
+  root.querySelectorAll('.vault-edit-btn').forEach(btn => btn.addEventListener('click', () => {
+    editingVaultId = btn.dataset.id;
+    renderVaultTabContent();
+  }));
+  root.querySelectorAll('.vault-cancel-btn').forEach(btn => btn.addEventListener('click', () => {
+    editingVaultId = null;
+    renderVaultTabContent();
+  }));
+  root.querySelectorAll('.vault-save-btn').forEach(btn => btn.addEventListener('click', () => submitVaultEdit(btn)));
+}
+
+async function submitVaultEdit(btn) {
+  const id = btn.dataset.id;
+  const category = SECTION_CATEGORY[currentVaultTab];
+  const wrap = btn.closest('[data-record-id]');
+  const errorEl = wrap?.querySelector('.vault-edit-error');
+  errorEl?.classList.add('hidden');
+  try {
+    const fields = collectVaultFieldValues(wrap, category);
+    await updateEvidenceFact(category, id, fields);
+    editingVaultId = null;
+    await loadVault();
+  } catch (e) {
+    if (errorEl) { errorEl.textContent = e.message; errorEl.classList.remove('hidden'); }
+  }
+}
+
+function renderVaultAddForm(section) {
+  const category = SECTION_CATEGORY[section];
+  return `<div class="bg-white rounded-xl border border-slate-200 shadow-sm p-4 mb-4" data-add-form>
+    <p class="text-label-caps font-label-caps text-slate-500 mb-3">ADD ${esc(SECTION_LABEL[section].toUpperCase())}</p>
+    ${renderVaultFieldInputs(category)}
+    <div class="flex items-center gap-2 mt-2">
+      <button class="vault-add-save bg-primary text-white text-xs font-semibold rounded-lg px-3 py-1.5 hover:opacity-90">Save</button>
+      <button class="vault-add-cancel text-xs font-semibold text-slate-500 border border-slate-200 rounded-lg px-3 py-1.5 hover:bg-slate-50">Cancel</button>
+    </div>
+    <p class="vault-add-error hidden text-xs text-rose-600 mt-2"></p>
+  </div>`;
+}
+
+function bindVaultAddForm(root) {
+  root.querySelector('.vault-add-cancel')?.addEventListener('click', () => { root.innerHTML = ''; });
+  root.querySelector('.vault-add-save')?.addEventListener('click', async () => {
+    const category = SECTION_CATEGORY[currentVaultTab];
+    const errorEl = root.querySelector('.vault-add-error');
+    errorEl?.classList.add('hidden');
+    try {
+      const fields = collectVaultFieldValues(root, category);
+      await addEvidenceFact(category, fields);
+      root.innerHTML = '';
+      await loadVault();
+    } catch (e) {
+      if (errorEl) { errorEl.textContent = e.message; errorEl.classList.remove('hidden'); }
+    }
+  });
+}
+
+function setupVault() {
+  document.getElementById('vault-add-btn')?.addEventListener('click', () => {
+    const formRoot = document.getElementById('vault-add-form-root');
+    if (!formRoot) return;
+    if (formRoot.innerHTML.trim()) { formRoot.innerHTML = ''; return; }
+    formRoot.innerHTML = renderVaultAddForm(currentVaultTab);
+    bindVaultAddForm(formRoot);
+  });
+  document.querySelectorAll('.vault-tab-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      currentVaultTab = btn.dataset.vaultTab;
+      editingVaultId = null;
+      const formRoot = document.getElementById('vault-add-form-root');
+      if (formRoot) formRoot.innerHTML = '';
+      renderVaultView();
+    });
+  });
 }
 
 // ─── Start ────────────────────────────────────────────────────────────────────

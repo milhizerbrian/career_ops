@@ -42,14 +42,6 @@ export function fetchSettingsHealth() {
   return jsonFetch('/api/settings/health');
 }
 
-export function evaluateUrl(payload) {
-  return jsonFetch('/api/evaluate-url', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(payload),
-  });
-}
-
 export function createDocs(jobId, body = {}) {
   return jsonFetch('/api/create-docs/' + jobId, {
     method: 'POST',
@@ -127,5 +119,81 @@ export function dismissGmailAmbiguity(threadId) {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({}),
+  });
+}
+
+export function fetchHome() {
+  return jsonFetch('/api/home');
+}
+
+export function postActionDecision(actionId, decision, extra = {}) {
+  return jsonFetch('/api/actions/' + encodeURIComponent(actionId) + '/decision', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ decision, ...extra }),
+  });
+}
+
+export function postQuickDecision(opportunityId, decision, extra = {}) {
+  return jsonFetch('/api/opportunities/' + encodeURIComponent(opportunityId) + '/quick-decision', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ decision, ...extra }),
+  });
+}
+
+export function fetchOpportunityWorkspace(opportunityId) {
+  return jsonFetch('/api/opportunities/' + encodeURIComponent(opportunityId) + '/workspace');
+}
+
+export function patchOpportunity(opportunityId, body) {
+  return jsonFetch('/api/opportunities/' + encodeURIComponent(opportunityId), {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+}
+
+export function postOpportunityStage(opportunityId, stage, reason = '') {
+  return jsonFetch('/api/opportunities/' + encodeURIComponent(opportunityId) + '/stage', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ stage, reason }),
+  });
+}
+
+export function answerCandidateQuestion(questionId, answer) {
+  return jsonFetch('/api/candidate-questions/' + encodeURIComponent(questionId) + '/answer', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ answer }),
+  });
+}
+
+export function fetchEvidenceVault() {
+  return jsonFetch('/api/evidence-vault');
+}
+
+export function addEvidenceFact(category, body) {
+  return jsonFetch('/api/evidence-vault/' + encodeURIComponent(category), {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+}
+
+export function updateEvidenceFact(category, id, body) {
+  return jsonFetch('/api/evidence-vault/' + encodeURIComponent(category) + '/' + encodeURIComponent(id), {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+}
+
+export function promoteQuestionToEvidence(questionId, body = {}) {
+  return jsonFetch('/api/candidate-questions/' + encodeURIComponent(questionId) + '/promote', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ confirm: true, ...body }),
   });
 }

@@ -12,6 +12,7 @@
     }
     :root { --sidebar-width: 16rem; }
     html, body { height: 100%; overflow: hidden; }
+    body { min-height: 100svh; }
     body { font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
     .nav-active {
       background: white;
@@ -25,8 +26,16 @@
     .sort-th:hover { background: #f8fafc; }
     .sort-icon { font-size: 14px; vertical-align: middle; margin-left: 2px; }
     .dashboard-scroll { overflow: auto; }
-    .dashboard-view { min-width: 960px; }
-    .dashboard-table { min-width: 960px; }
+    .dashboard-view {
+      width: 100%;
+      min-width: 0;
+      max-width: 100%;
+    }
+    .dashboard-table {
+      width: 100%;
+      min-width: 0;
+      table-layout: auto;
+    }
     .app-sidebar {
       width: var(--sidebar-width);
       min-width: 12rem;
@@ -87,11 +96,120 @@
     }
     #sidebar-toggle:hover { border-color: #93c5fd; color: #004ac6; background: #eff6ff; }
     #sidebar-toggle .material-symbols-outlined { font-size: 18px; }
-    @media (min-width: 768px) {
-      #sidebar-toggle { display: flex; }
+    #sidebar-backdrop {
+      position: fixed;
+      inset: 0;
+      z-index: 45;
+      display: none;
+      background: rgba(15, 23, 42, 0.35);
+      backdrop-filter: blur(2px);
     }
-    @media (max-width: 767px) {
+    #pipeline-breakdown {
+      grid-template-columns: repeat(auto-fit, minmax(112px, 1fr));
+    }
+    #workflow-summary-grid,
+    #outreach-summary-root,
+    #analytics-summary-root {
+      grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+    }
+    @media (min-width: 1180px) {
+      #sidebar-toggle { display: flex; }
+      .dashboard-table { min-width: 900px; }
+    }
+    @media (max-width: 1179px) {
+      .app-sidebar {
+        width: min(var(--sidebar-width), calc(100vw - 48px));
+        max-width: calc(100vw - 48px);
+        transform: translateX(-100%);
+        box-shadow: 0 24px 48px rgba(15, 23, 42, 0.18);
+      }
       .app-main { margin-left: 0; }
+      body.sidebar-mobile-open .app-sidebar { transform: translateX(0); }
+      body.sidebar-mobile-open #sidebar-backdrop { display: block; }
+      #sidebar-toggle {
+        display: flex;
+        left: 12px;
+        border-color: #bfdbfe;
+        background: #eff6ff;
+        color: #004ac6;
+      }
+      .sidebar-resize-handle { display: none; }
+      header { padding-left: 3.5rem !important; }
+    }
+    @media (max-width: 1179px) {
+      .dashboard-table thead { display: none; }
+      .dashboard-table,
+      .dashboard-table tbody,
+      .dashboard-table tr,
+      .dashboard-table td {
+        display: block;
+        width: 100%;
+      }
+      .dashboard-table tr.hidden { display: none; }
+      .dashboard-table tr {
+        padding: 0.75rem;
+        border-bottom: 1px solid #e2e8f0;
+      }
+      .dashboard-table td {
+        padding: 0.25rem 0 !important;
+        border: 0;
+      }
+      .dashboard-table td.hidden { display: none !important; }
+      .dashboard-table td:last-child > .flex {
+        flex-wrap: wrap;
+        justify-content: flex-start;
+      }
+      .dashboard-table .max-w-xs,
+      .dashboard-table .max-w-sm {
+        max-width: calc(100vw - 8rem);
+      }
+    }
+    @media (max-width: 639px) {
+      body { height: 100svh; }
+      header {
+        height: auto !important;
+        min-height: 4rem;
+        padding-right: 0.75rem !important;
+      }
+      .dashboard-scroll {
+        padding: 1rem !important;
+        row-gap: 1rem;
+      }
+      .dashboard-scroll h2 { font-size: 22px; line-height: 28px; }
+      .dashboard-table button,
+      #edit-save,
+      #edit-cancel {
+        min-height: 40px;
+      }
+      .dashboard-view > .flex,
+      .dashboard-view .bg-white.flex {
+        align-items: stretch;
+      }
+      .dashboard-view select,
+      .dashboard-view input,
+      .dashboard-view button {
+        max-width: 100%;
+      }
+      #opp-status-filter,
+      #opp-score-filter,
+      #opp-source-filter,
+      #opp-posted-filter,
+      #resume-filter,
+      #contacts-relationship-filter,
+      #contacts-response-filter,
+      #int-status-filter,
+      #int-sort,
+      #rej-sort {
+        width: 100%;
+      }
+      #opp-count-label {
+        width: 100%;
+        margin-left: 0;
+      }
+      #edit-modal { align-items: stretch; }
+      #edit-modal > .relative {
+        max-height: calc(100svh - 2rem);
+      }
     }
   </style>
 </head>
@@ -101,7 +219,7 @@
   <button id="sidebar-toggle" type="button" aria-label="Hide sidebar" aria-expanded="true" title="Hide sidebar">
     <span class="material-symbols-outlined">left_panel_close</span>
   </button>
-  <aside id="app-sidebar" class="app-sidebar hidden md:flex flex-col p-4 gap-2 bg-slate-50 h-screen border-r border-slate-200 fixed left-0 top-0 z-50">
+  <aside id="app-sidebar" class="app-sidebar flex flex-col p-4 gap-2 bg-slate-50 h-screen border-r border-slate-200 fixed left-0 top-0 z-50">
     <div class="mb-6 px-2 py-2">
       <div class="flex items-center gap-3">
         <div class="w-9 h-9 bg-primary rounded-lg flex items-center justify-center text-white shrink-0">
@@ -115,7 +233,10 @@
     </div>
 
     <nav class="flex-1 space-y-1">
-      <button data-view="dashboard"  class="nav-btn nav-active   w-full flex items-center gap-3 px-3 py-2 rounded-lg transition-all text-sm font-medium">
+      <button data-view="home" class="nav-btn nav-active w-full flex items-center gap-3 px-3 py-2 rounded-lg transition-all text-sm font-medium">
+        <span class="material-symbols-outlined text-xl">today</span><span>Home</span>
+      </button>
+      <button data-view="dashboard"  class="nav-btn nav-inactive   w-full flex items-center gap-3 px-3 py-2 rounded-lg transition-all text-sm font-medium">
         <span class="material-symbols-outlined text-xl">dashboard</span><span>Dashboard</span>
       </button>
       <button data-view="jobs" class="nav-btn nav-inactive w-full flex items-center gap-3 px-3 py-2 rounded-lg transition-all text-sm font-medium">
@@ -129,6 +250,9 @@
       </button>
       <button data-view="contacts" class="nav-btn nav-inactive w-full flex items-center gap-3 px-3 py-2 rounded-lg transition-all text-sm font-medium">
         <span class="material-symbols-outlined text-xl">contacts</span><span>Contacts</span>
+      </button>
+      <button data-view="vault" class="nav-btn nav-inactive w-full flex items-center gap-3 px-3 py-2 rounded-lg transition-all text-sm font-medium">
+        <span class="material-symbols-outlined text-xl">verified</span><span>Career Profile</span>
       </button>
       <button data-view="gmail-review" class="nav-btn nav-inactive w-full flex items-center gap-3 px-3 py-2 rounded-lg transition-all text-sm font-medium">
         <span class="material-symbols-outlined text-xl">mark_email_unread</span><span>Gmail Review</span>
@@ -158,6 +282,7 @@
     </div>
     <div id="sidebar-resize-handle" class="sidebar-resize-handle" role="separator" aria-orientation="vertical" aria-label="Resize sidebar"></div>
   </aside>
+  <div id="sidebar-backdrop" aria-hidden="true"></div>
 
   <!-- ─── Main ────────────────────────────────────────────────────────────── -->
   <main id="app-main" class="app-main h-screen overflow-hidden flex flex-col">
@@ -185,9 +310,70 @@
     <div class="dashboard-scroll flex-1 p-6 space-y-6">
 
       <!-- ═══════════════════════════════════════════════════════════════════
+           HOME VIEW (Phase 3: Daily Command Center) — default view
+           ═══════════════════════════════════════════════════════════════════ -->
+      <div id="view-home" class="dashboard-view">
+        <div class="flex flex-col md:flex-row md:items-end justify-between gap-2 mb-6">
+          <div>
+            <p class="text-label-caps font-label-caps text-slate-500">TODAY</p>
+            <h2 class="text-h1 font-h1 text-on-surface">What should I do next?</h2>
+            <p class="text-body-md text-slate-500" id="home-subtitle">Loading…</p>
+          </div>
+          <button id="start-my-day-btn"
+            class="flex items-center gap-2 bg-primary text-white text-sm font-semibold px-4 py-2.5 rounded-lg hover:opacity-90 transition-opacity">
+            <span class="material-symbols-outlined text-lg">play_arrow</span>
+            Start Today's Job Search
+          </button>
+        </div>
+
+        <!-- Caught-up / empty state -->
+        <div id="home-caught-up" class="hidden bg-white p-10 rounded-xl border border-slate-200 shadow-sm text-center">
+          <span class="material-symbols-outlined text-4xl text-emerald-500 mb-2 block">task_alt</span>
+          <p class="text-h2 font-h2 text-on-surface mb-1">You're caught up.</p>
+          <p class="text-body-md text-slate-500 mb-4">No high-priority actions currently need attention.</p>
+          <button class="home-review-new-btn text-sm font-semibold text-blue-600 hover:underline">Review New Opportunities</button>
+        </div>
+
+        <div id="home-content">
+          <!-- Top Priority -->
+          <div id="home-top-priority-wrap" class="mb-4"></div>
+
+          <div class="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-4">
+            <!-- Next -->
+            <div class="bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
+              <p class="text-label-caps font-label-caps text-slate-500 mb-3">NEXT</p>
+              <div id="home-next-list" class="space-y-2"></div>
+            </div>
+            <!-- Follow ups -->
+            <div class="bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
+              <p class="text-label-caps font-label-caps text-slate-500 mb-3">FOLLOW UPS</p>
+              <div id="home-followups-list" class="space-y-2"></div>
+            </div>
+          </div>
+
+          <!-- New opportunities -->
+          <div class="bg-white p-4 rounded-xl border border-slate-200 shadow-sm mb-4 flex items-center justify-between flex-wrap gap-3">
+            <div>
+              <p class="text-label-caps font-label-caps text-slate-500 mb-1">NEW OPPORTUNITIES</p>
+              <p class="text-sm text-slate-600" id="home-new-opportunities-text">—</p>
+            </div>
+            <button id="home-review-btn" class="text-sm font-semibold border border-blue-200 bg-blue-50 text-blue-700 px-3 py-2 rounded-lg hover:bg-blue-100 transition-colors">
+              Review
+            </button>
+          </div>
+
+          <!-- Pipeline snapshot -->
+          <div class="bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
+            <p class="text-label-caps font-label-caps text-slate-500 mb-3">PIPELINE SNAPSHOT</p>
+            <div id="home-pipeline-snapshot" class="grid grid-cols-2 md:grid-cols-4 gap-3"></div>
+          </div>
+        </div>
+      </div><!-- /view-home -->
+
+      <!-- ═══════════════════════════════════════════════════════════════════
            DASHBOARD VIEW (combined with Opportunities)
            ═══════════════════════════════════════════════════════════════════ -->
-      <div id="view-dashboard" class="dashboard-view">
+      <div id="view-dashboard" class="dashboard-view" hidden>
 
         <!-- Header row -->
         <div class="flex flex-col md:flex-row md:items-end justify-between gap-2 mb-6">
@@ -203,11 +389,6 @@
             <button id="opp-clear-btn"
               class="hidden text-xs text-slate-500 hover:text-red-500 border border-slate-200 rounded-lg px-3 py-1.5 transition-colors">
               Clear filters
-            </button>
-            <button id="add-job-btn"
-              class="flex items-center gap-2 bg-primary text-white text-sm font-semibold px-4 py-2 rounded-lg hover:opacity-90 transition-opacity">
-              <span class="material-symbols-outlined text-base">add</span>
-              Add Job
             </button>
           </div>
         </div>
@@ -262,41 +443,6 @@
             <span id="bulk-generate-visible-label">Generate visible</span>
           </button>
           <span class="text-xs text-slate-400 ml-auto" id="opp-count-label"></span>
-        </div>
-
-        <!-- Add Job panel (collapsible) -->
-        <div id="add-job-panel" class="hidden bg-white rounded-xl border border-blue-200 shadow-sm p-5 mb-4">
-          <h3 class="text-sm font-bold text-on-surface mb-3 flex items-center gap-2">
-            <span class="material-symbols-outlined text-blue-600 text-base">travel_explore</span>
-            Scrape &amp; Add Job
-          </h3>
-          <div class="flex flex-col gap-3">
-            <div class="flex flex-col sm:flex-row gap-3">
-              <div class="relative flex-1">
-                <span class="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-lg">link</span>
-                <input id="add-job-url" type="url"
-                  class="w-full bg-slate-50 border border-slate-200 rounded-lg pl-10 pr-4 py-2 text-sm outline-none focus:ring-2 focus:ring-blue-600/20"
-                  placeholder="https://boards.greenhouse.io/…  or  https://jobs.lever.co/…">
-              </div>
-            </div>
-            <div class="flex flex-col sm:flex-row gap-3">
-              <input id="add-job-company" type="text"
-                class="flex-1 bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-blue-600/20"
-                placeholder="Company (optional — auto-detected)">
-              <input id="add-job-title" type="text"
-                class="flex-1 bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-blue-600/20"
-                placeholder="Job title (optional — auto-detected)">
-            </div>
-            <div class="flex items-center gap-3">
-              <button id="add-job-submit"
-                class="flex items-center gap-2 bg-primary text-white text-sm font-semibold px-4 py-2 rounded-lg hover:opacity-90 transition-opacity disabled:opacity-50">
-                <span class="material-symbols-outlined text-base">radar</span>
-                <span id="add-job-submit-label">Scrape &amp; Add</span>
-              </button>
-              <button id="add-job-cancel" class="text-sm text-slate-500 hover:text-slate-700">Cancel</button>
-            </div>
-            <div id="add-job-log" class="hidden font-mono text-xs space-y-0.5 bg-slate-50 rounded-lg p-3 max-h-40 overflow-y-auto"></div>
-          </div>
         </div>
 
         <!-- Jobs table — full width -->
@@ -424,6 +570,31 @@
         </div>
         <div id="contacts-root" class="bg-white rounded-xl border border-slate-200 shadow-sm overflow-x-auto"></div>
       </div><!-- /view-contacts -->
+
+      <!-- ═══════════════════════════════════════════════════════════════════
+           CAREER PROFILE (PHASE 5: EVIDENCE VAULT)
+           ═══════════════════════════════════════════════════════════════════ -->
+      <div id="view-vault" class="dashboard-view" hidden>
+        <div class="flex flex-col md:flex-row md:items-center justify-between gap-2 mb-4">
+          <div>
+            <h2 class="text-h1 font-h1 text-on-surface">Career Profile</h2>
+            <p class="text-body-md text-slate-500">Verified career evidence used by scoring, resumes, and interview prep.</p>
+          </div>
+          <button id="vault-add-btn" class="bg-primary text-white text-xs font-semibold rounded-lg px-3 py-1.5 hover:opacity-90">Add</button>
+        </div>
+        <div class="border-b border-slate-200 mb-4">
+          <nav class="flex flex-wrap gap-1 -mb-px">
+            <button class="vault-tab-btn text-xs font-semibold px-3 py-2 border-b-2" data-vault-tab="experience">Experience</button>
+            <button class="vault-tab-btn text-xs font-semibold px-3 py-2 border-b-2" data-vault-tab="achievements">Achievements</button>
+            <button class="vault-tab-btn text-xs font-semibold px-3 py-2 border-b-2" data-vault-tab="skills">Skills</button>
+            <button class="vault-tab-btn text-xs font-semibold px-3 py-2 border-b-2" data-vault-tab="certifications">Certifications</button>
+            <button class="vault-tab-btn text-xs font-semibold px-3 py-2 border-b-2" data-vault-tab="metrics">Metrics</button>
+            <button class="vault-tab-btn text-xs font-semibold px-3 py-2 border-b-2" data-vault-tab="stories">Stories</button>
+          </nav>
+        </div>
+        <div id="vault-add-form-root"></div>
+        <div id="vault-content-root"></div>
+      </div><!-- /view-vault -->
 
       <!-- ═══════════════════════════════════════════════════════════════════
            GMAIL REVIEW VIEW
@@ -607,6 +778,36 @@
 
     </div><!-- /flex-1 p-6 -->
   </main>
+
+  <!-- ─── Start My Day Modal (Phase 3) ───────────────────────────────────────── -->
+  <div id="start-day-modal" class="hidden fixed inset-0 z-[60] flex items-center justify-center p-4">
+    <div id="start-day-backdrop" class="absolute inset-0 bg-black/40 backdrop-blur-sm"></div>
+    <div class="relative bg-white rounded-2xl shadow-2xl w-full max-w-lg flex flex-col">
+      <div class="flex items-center justify-between px-6 py-4 border-b border-slate-200">
+        <p class="text-xs font-semibold text-slate-500 uppercase tracking-wide" id="start-day-progress">Task 1 of 1</p>
+        <button id="start-day-close" class="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-slate-100 transition-colors text-slate-500">
+          <span class="material-symbols-outlined text-xl">close</span>
+        </button>
+      </div>
+      <div class="px-6 py-6" id="start-day-body">
+        <h3 class="text-h2 font-h2 text-on-surface mb-2" id="start-day-title">—</h3>
+        <p class="text-sm text-slate-500 mb-1" id="start-day-reason">—</p>
+        <div id="start-day-quick-decisions" class="hidden flex gap-2 mt-4">
+          <button data-decision="pursue" class="quick-decision-btn flex-1 bg-emerald-50 text-emerald-700 border border-emerald-200 text-sm font-semibold px-3 py-2 rounded-lg hover:bg-emerald-100">Pursue</button>
+          <button data-decision="not_interested" class="quick-decision-btn flex-1 bg-rose-50 text-rose-700 border border-rose-200 text-sm font-semibold px-3 py-2 rounded-lg hover:bg-rose-100">Not Interested</button>
+          <button data-decision="snooze" class="quick-decision-btn flex-1 bg-slate-50 text-slate-700 border border-slate-200 text-sm font-semibold px-3 py-2 rounded-lg hover:bg-slate-100">Snooze</button>
+        </div>
+      </div>
+      <div class="flex items-center gap-2 px-6 py-4 border-t border-slate-200">
+        <button id="start-day-skip" class="text-sm font-semibold text-slate-500 hover:text-slate-700 px-3 py-2 rounded-lg">Skip</button>
+        <button id="start-day-snooze" class="text-sm font-semibold text-slate-500 hover:text-slate-700 px-3 py-2 rounded-lg">Snooze</button>
+        <button id="start-day-continue" class="ml-auto flex items-center gap-1.5 bg-primary text-white text-sm font-semibold px-4 py-2 rounded-lg hover:opacity-90">
+          Continue
+          <span class="material-symbols-outlined text-lg">arrow_forward</span>
+        </button>
+      </div>
+    </div>
+  </div>
 
   <!-- ─── Edit Job Modal ────────────────────────────────────────────────────── -->
   <div id="edit-modal" class="hidden fixed inset-0 z-[60] flex items-center justify-center p-4">

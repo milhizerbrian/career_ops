@@ -14,12 +14,18 @@ describe('frontend ES modules', () => {
     assert.doesNotMatch(html, /<script>\s*\/\/ ─── State/);
   });
 
-  it('allows horizontal scrolling across all dashboard views', () => {
+  it('scales dashboard views across mobile and tablet widths', () => {
     const html = read('public/index.html');
+    const dashboard = read('public/js/dashboard.js');
 
     assert.match(html, /\.dashboard-scroll \{ overflow: auto; \}/);
-    assert.match(html, /\.dashboard-view \{ min-width: 960px; \}/);
-    assert.match(html, /\.dashboard-table \{ min-width: 960px; \}/);
+    assert.match(html, /\.dashboard-view \{\s+width: 100%;\s+min-width: 0;\s+max-width: 100%;\s+\}/);
+    assert.match(html, /\.dashboard-table \{\s+width: 100%;\s+min-width: 0;/);
+    assert.match(html, /@media \(max-width: 1179px\) \{/);
+    assert.match(html, /\.dashboard-table thead \{ display: none; \}/);
+    assert.match(html, /id="sidebar-backdrop"/);
+    assert.match(dashboard, /matchMedia\('\(max-width: 1179px\)'\)/);
+    assert.match(dashboard, /sidebar-mobile-open/);
     assert.match(html, /class="dashboard-scroll flex-1 p-6 space-y-6"/);
     for (const viewId of [
       'view-dashboard',
@@ -235,6 +241,18 @@ describe('frontend ES modules', () => {
     assert.doesNotMatch(dashboard, /document\.getElementById\('kpi-grid'\)\.innerHTML/);
   });
 
+  it('does not expose dashboard job search ingestion controls', () => {
+    const html = read('public/index.html');
+    const dashboard = read('public/js/dashboard.js');
+    const api = read('public/js/api.js');
+
+    assert.doesNotMatch(html, /add-job-/);
+    assert.doesNotMatch(html, /Scrape &amp; Add Job/);
+    assert.doesNotMatch(dashboard, /submitAddJob/);
+    assert.doesNotMatch(dashboard, /eval-progress/);
+    assert.doesNotMatch(api, /evaluate-url/);
+  });
+
   it('shows workflow card details on hover', () => {
     const dashboard = read('public/js/dashboard.js');
 
@@ -355,7 +373,22 @@ describe('frontend ES modules', () => {
       assert.match(html, new RegExp(`id="view-${view}"`));
     }
     for (const helper of [
+      // Phase 4 replaced the old job-detail modal's fetchJobDetail() call
+      // with fetchOpportunityWorkspace() (the tabbed Opportunity Workspace);
+      // fetchJobDetail itself still exists in api.js but dashboard.js no
+      // longer calls it, so it's checked in api.js only, not here.
+      'fetchOpportunityWorkspace',
+      'fetchResumeWorkspace',
+      'fetchOutreachWorkspace',
+      'fetchContactsWorkspace',
+      'fetchAnalyticsSummary',
+      'fetchSettingsHealth',
+    ]) {
+      assert.match(dashboard, new RegExp(helper));
+    }
+    for (const helper of [
       'fetchJobDetail',
+      'fetchOpportunityWorkspace',
       'fetchResumeWorkspace',
       'fetchOutreachWorkspace',
       'fetchContactsWorkspace',
@@ -363,7 +396,6 @@ describe('frontend ES modules', () => {
       'fetchSettingsHealth',
     ]) {
       assert.match(api, new RegExp(`function ${helper}`));
-      assert.match(dashboard, new RegExp(helper));
     }
     assert.match(server, /\/api\/workspaces\/resume/);
     assert.match(server, /\/api\/workspaces\/outreach/);
@@ -376,5 +408,29 @@ describe('frontend ES modules', () => {
     assert.match(dashboard, /open-job-btn/);
     assert.match(dashboard, /category\.label/);
     assert.match(dashboard, /category\.signals/);
+  });
+
+  it('opens Phase 3 Command Center actions to the matching Opportunity Workspace tab (Phase 4 deep links)', () => {
+    const dashboard = read('public/js/dashboard.js');
+
+    // Every Phase 3 action type maps to a real Opportunity Workspace tab —
+    // completing/continuing an action from Home or Start My Day should land
+    // on the tab that action is about, not always Overview.
+    assert.match(dashboard, /const ACTION_TYPE_TAB = \{/);
+    for (const [type, tab] of [
+      ['review_opportunity', 'overview'],
+      ['answer_question', 'fit'],
+      ['generate_resume', 'resume'],
+      ['review_resume', 'resume'],
+      ['apply', 'application'],
+      ['find_contact', 'contacts'],
+      ['follow_up', 'application'],
+      ['prepare_interview', 'interview'],
+      ['record_outcome', 'activity'],
+    ]) {
+      assert.match(dashboard, new RegExp(`${type}:\\s*'${tab}'`));
+    }
+    assert.match(dashboard, /async function completeActionFromHome\(id, opportunityId, type\)/);
+    assert.match(dashboard, /showJobDetail\(opportunityId, \{ tab: ACTION_TYPE_TAB\[type\] \|\| 'overview' \}\)/);
   });
 });

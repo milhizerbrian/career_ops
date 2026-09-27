@@ -16,10 +16,8 @@ import { generateResume, analyzeGaps, generateGapQuestions, applyGapAnswersToBra
 import { startWatcher } from './lib/watcher.mjs';
 import { scoreAtsMatch } from './lib/ats-utils.mjs';
 import { computeOiScore } from './lib/opportunity-intelligence.mjs';
-import { evaluateUrl } from './lib/evaluator.mjs';
 import { buildGeneratedDocEntry } from './lib/generated-docs.mjs';
 import { normalizeStatus } from './lib/status-utils.mjs';
-import { validatePublicHttpUrl } from './lib/url-safety.mjs';
 import { analyzeBragDocQuality } from './lib/brag-quality.mjs';
 import { beginSharedResumeResources, canStartResumeRun, resumeMaxConcurrent } from './lib/resume-run-coordinator.mjs';
 import { appendWorkflowEvent, applyManualWorkflowEvent } from './lib/job-workflow.mjs';
@@ -40,6 +38,11 @@ import {
   buildResumeWorkspace,
   buildSettingsHealth,
 } from './lib/workspace-read-models.mjs';
+import { listOpportunities, changeStage, updateOpportunity } from './lib/opportunity-store.mjs';
+import { buildActions, buildHomeSummary, recordActionDecision, actionId } from './lib/action-engine.mjs';
+import { getOpenQuestions, answerQuestion } from './lib/candidate-questions.mjs';
+import { buildOpportunityWorkspace } from './lib/opportunity-workspace.mjs';
+import { buildEvidenceVault, addFact, updateFact, promoteQuestionToEvidence } from './lib/evidence-vault.mjs';
 import { runHealthChecks } from './scripts/health-check.mjs';
 
 const APP_ROOT = path.dirname(fileURLToPath(import.meta.url));
@@ -257,6 +260,170 @@ app.get('/api/settings/health', async (req, res) => {
   }
 });
 
+// ─── Phase 3: Daily Command Center ─────────────────────────────────────────
+// Home-screen payload: derived fresh from Phase 1 opportunities + Phase 2
+// open questions on every (cache-invalidated) build — see lib/action-engine.mjs
+// for why actions are computed, not stored.
+function buildHomePayload() {
+  const opportunities = listOpportunities();
+  const openQuestions = getOpenQuestions();
+  const actions = buildActions(opportunities, { openQuestions });
+  return { ...buildHomeSummary(opportunities, actions), generatedAt: new Date().toISOString() };
+}
+
+app.get('/api/home', (req, res) => {
+  try {
+    res.json(getCachedValue('home', buildHomePayload));
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Complete / skip / snooze / reopen a single action. `id` is `${opportunityId}:${type}`.
+app.post('/api/actions/:id/decision', express.json(), (req, res) => {
+  try {
+    const { decision, snoozeDays } = req.body ?? {};
+    const record = recordActionDecision(decodeURIComponent(req.params.id), decision, { snoozeDays });
+    invalidateCache();
+    res.json({ ok: true, record, home: getCachedValue('home', buildHomePayload) });
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+// Quick decision on a discovered/qualified opportunity: Pursue / Not Interested / Snooze.
+app.post('/api/opportunities/:id/quick-decision', express.json(), (req, res) => {
+  try {
+    const { decision } = req.body ?? {};
+    const id = req.params.id;
+    const reviewActionId = actionId(id, 'review_opportunity');
+    if (decision === 'pursue') {
+      changeStage(id, 'pursuing', { reason: 'Quick decision: pursue', actor: 'quick-decision' });
+      recordActionDecision(reviewActionId, 'complete');
+    } else if (decision === 'not_interested') {
+      changeStage(id, 'rejected', { reason: 'Quick decision: not interested', actor: 'quick-decision' });
+      recordActionDecision(reviewActionId, 'complete');
+    } else if (decision === 'snooze') {
+      recordActionDecision(reviewActionId, 'snooze', { snoozeDays: req.body?.snoozeDays });
+    } else {
+      return res.status(400).json({ error: `Unsupported decision: ${decision}` });
+    }
+    invalidateCache();
+    res.json({ ok: true, home: getCachedValue('home', buildHomePayload) });
+  } catch (err) {
+    res.status(err.message?.includes('not found') ? 404 : 400).json({ error: err.message });
+  }
+});
+
+// ─── Phase 4: Opportunity Workspace ─────────────────────────────────────────
+// Single-page read model for one Opportunity (Overview/Fit/Resume/Contacts/
+// Application/Interview/Activity tabs) — see lib/opportunity-workspace.mjs.
+app.get('/api/opportunities/:id/workspace', (req, res) => {
+  try {
+    res.json(buildOpportunityWorkspace(req.params.id));
+  } catch (err) {
+    res.status(err.code === 'OPPORTUNITY_NOT_FOUND' ? 404 : 500).json({ error: err.message });
+  }
+});
+
+// Application-tab fields, plus priority — a subset of opportunity-store.mjs's
+// DIRECTLY_UPDATABLE_FIELDS. Company/title/etc. stay on the existing
+// PATCH /api/jobs/:id route (the workspace header's "Edit" button) to avoid
+// two edit paths for the same raw job fields.
+const OPPORTUNITY_EDITABLE_FIELDS = [
+  'priority', 'nextAction', 'nextActionDate',
+  'appliedDate', 'resumeVersion', 'coverLetterVersion', 'referral', 'applicationSource',
+  'outcomeStatus', 'closedDate', 'outcomeReason',
+];
+app.patch('/api/opportunities/:id', express.json(), (req, res) => {
+  try {
+    const fields = Object.fromEntries(
+      Object.entries(req.body ?? {}).filter(([k]) => OPPORTUNITY_EDITABLE_FIELDS.includes(k))
+    );
+    if (!Object.keys(fields).length) return res.status(400).json({ error: 'No editable fields provided' });
+    updateOpportunity(req.params.id, fields);
+    invalidateCache();
+    res.json({ ok: true, workspace: buildOpportunityWorkspace(req.params.id) });
+  } catch (err) {
+    res.status(err.message.includes('not found') ? 404 : 400).json({ error: err.message });
+  }
+});
+
+// "Change Stage" quick action — any stage, any opportunity (unlike quick-decision
+// above, which is specifically the Phase 3 review_opportunity action).
+app.post('/api/opportunities/:id/stage', express.json(), (req, res) => {
+  try {
+    changeStage(req.params.id, req.body?.stage, { reason: req.body?.reason || '', actor: 'workspace' });
+    invalidateCache();
+    res.json({ ok: true, workspace: buildOpportunityWorkspace(req.params.id) });
+  } catch (err) {
+    res.status(err.message.includes('not found') ? 404 : 400).json({ error: err.message });
+  }
+});
+
+// Answers a persisted candidate-clarification question (Phase 2's
+// candidate-questions.mjs — the "existing mechanism" the Fit tab's Unknowns
+// surface for Brian to resolve).
+app.post('/api/candidate-questions/:id/answer', express.json(), (req, res) => {
+  try {
+    const question = answerQuestion(req.params.id, req.body?.answer ?? '');
+    invalidateCache();
+    res.json({ ok: true, question });
+  } catch (err) {
+    res.status(err.message.includes('not found') ? 404 : 400).json({ error: err.message });
+  }
+});
+
+// ─── Phase 5: Career Evidence Vault ─────────────────────────────────────────
+// UI over Phase 0's canonical candidate fact files — see
+// lib/evidence-vault.mjs. Never a second candidate database: reads/writes
+// the same data/candidate/*.json files Phase 2 scoring and resume
+// generation already read.
+app.get('/api/evidence-vault', (req, res) => {
+  try {
+    res.json(buildEvidenceVault());
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/evidence-vault/:category', express.json(), (req, res) => {
+  try {
+    const fact = addFact(req.params.category, req.body ?? {});
+    invalidateCache();
+    res.json({ ok: true, fact, vault: buildEvidenceVault() });
+  } catch (err) {
+    res.status(err.code === 'DUPLICATE_EVIDENCE' ? 409 : 400).json({ error: err.message, existingId: err.existingId });
+  }
+});
+
+app.patch('/api/evidence-vault/:category/:id', express.json(), (req, res) => {
+  try {
+    const fact = updateFact(req.params.category, req.params.id, req.body ?? {});
+    invalidateCache();
+    res.json({ ok: true, fact, vault: buildEvidenceVault() });
+  } catch (err) {
+    res.status(err.code === 'EVIDENCE_NOT_FOUND' ? 404 : 400).json({ error: err.message });
+  }
+});
+
+// Turns an already-answered Phase 2 candidate question into a verified,
+// resume-usable fact — only when the caller explicitly confirms, so
+// answering a question never silently converts it into evidence.
+app.post('/api/candidate-questions/:id/promote', express.json(), (req, res) => {
+  try {
+    const { confirm, category, employer, tags } = req.body ?? {};
+    const result = promoteQuestionToEvidence(req.params.id, { confirm, category, employer, tags });
+    invalidateCache();
+    res.json({ ok: true, ...result });
+  } catch (err) {
+    const status = err.code === 'QUESTION_NOT_FOUND' ? 404
+      : err.code === 'CONFIRMATION_REQUIRED' ? 400
+      : 400;
+    res.status(status).json({ error: err.message });
+  }
+});
+
 app.get('/api/pipeline', (req, res) => {
   try {
     res.json(loadPipeline());
@@ -375,59 +542,8 @@ app.get('/api/recruiter-analytics', (req, res) => {
   }
 });
 
-// Manually evaluate a job URL through the scoring pipeline
-app.post('/api/evaluate-url', express.json(), async (req, res) => {
-  const { url, company = '', title = '', fullDescription = '' } = req.body ?? {};
-  if (!url || typeof url !== 'string') {
-    return res.status(400).json({ error: 'url is required and must be an http(s) URL' });
-  }
-  try {
-    await validatePublicHttpUrl(url);
-  } catch (err) {
-    return res.status(400).json({ error: err.message });
-  }
-
-  // Respond immediately — progress comes via socket.io
-  res.json({ started: true, url });
-
-  try {
-    const result = await evaluateUrl(url, {
-      company,
-      title,
-      fullDescription,
-      onProgress: (stage, msg) => {
-        io.emit('eval-progress', { url, stage, message: msg });
-      },
-    });
-
-    invalidateCache();
-    if (result.alreadyExists) {
-      io.emit('eval-complete', {
-        url,
-        id: result.id,
-        alreadyExists: true,
-        message: `Already in tracker (id: ${result.id}, score: ${result.entry.score})`,
-      });
-    } else {
-      const entry = {
-        ...result.entry,
-        id: result.id,
-        _oi:  computeOiScore(result.entry),
-        _ats: scoreAtsMatch(result.entry, loadBragDoc()),
-      };
-      io.emit('eval-complete', {
-        url,
-        id: result.id,
-        alreadyExists: false,
-        score: entry.score,
-        company: entry.company,
-        title: entry.title,
-        entry,
-      });
-    }
-  } catch (err) {
-    io.emit('eval-error', { url, message: err.message });
-  }
+app.post('/api/evaluate-url', express.json(), (req, res) => {
+  res.status(410).json({ error: 'Dashboard job search ingestion is disabled.' });
 });
 
 // Update editable fields on a job

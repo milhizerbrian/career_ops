@@ -11,6 +11,7 @@ import {
   buildResumeDebugStats,
   buildResumePlanningContext,
   buildResumeSectionPlan,
+  chooseDynamicPageFitAction,
   classifyResumeLayout,
   classifyResumeRole,
   compactOverflowFields,
@@ -387,6 +388,29 @@ describe('rendered resume layout', () => {
 
     assert.equal(validateResumeQuality(repaired, ['JOB_1_BULLET_1']), true);
     assert.match(repaired.JOB_1_BULLET_1, /98% retention|enterprise accounts/);
+  });
+
+  it('routes underfilled dynamic resumes to content repair instead of failing', () => {
+    assert.equal(chooseDynamicPageFitAction({
+      status: 'underfilled',
+      pageCount: 2,
+      secondPageFillRatio: 0.8248,
+      renderedWords: 983,
+    }), 'content-repair');
+
+    assert.equal(chooseDynamicPageFitAction({
+      status: 'overflow',
+      pageCount: 3,
+      secondPageFillRatio: 0.96,
+      renderedWords: 1180,
+    }, 0), 'tighten');
+
+    assert.equal(chooseDynamicPageFitAction({
+      status: 'overflow',
+      pageCount: 3,
+      secondPageFillRatio: 0.96,
+      renderedWords: 1180,
+    }, 1), 'drop-bullet');
   });
 });
 
