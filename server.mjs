@@ -22,6 +22,7 @@ import { analyzeBragDocQuality } from './lib/brag-quality.mjs';
 import { beginSharedResumeResources, canStartResumeRun, resumeMaxConcurrent } from './lib/resume-run-coordinator.mjs';
 import { appendWorkflowEvent, applyManualWorkflowEvent } from './lib/job-workflow.mjs';
 import { upsertJobContact } from './lib/job-contacts.mjs';
+import { upsertInterviewRound } from './lib/interview-rounds.mjs';
 import { createOutreachDraft, storeOutreachDraft } from './lib/outreach-drafts.mjs';
 import {
   getRecruiterTargeting,
@@ -359,6 +360,32 @@ app.post('/api/opportunities/:id/stage', express.json(), (req, res) => {
   } catch (err) {
     res.status(err.message.includes('not found') ? 404 : 400).json({ error: err.message });
   }
+});
+
+// ─── Phase 9.1: Interview rounds ───────────────────────────────────────────
+// Create / partially update a round on job.interviews[] (lib/interview-rounds.mjs).
+// Rounds never change the Opportunity stage — use the stage route for that.
+function saveInterviewRound(req, res, payload) {
+  try {
+    let round;
+    updateJobWithPrevious(req.params.id, job => {
+      round = upsertInterviewRound(job, payload);
+      return job;
+    });
+    invalidateCache();
+    res.json({ ok: true, round, workspace: buildOpportunityWorkspace(req.params.id) });
+  } catch (err) {
+    res.status(err.message.includes('not found') ? 404 : 400).json({ error: err.message });
+  }
+}
+
+app.post('/api/opportunities/:id/interviews', express.json(), (req, res) => {
+  const { id: _ignored, ...payload } = req.body ?? {};
+  saveInterviewRound(req, res, payload);
+});
+
+app.patch('/api/opportunities/:id/interviews/:roundId', express.json(), (req, res) => {
+  saveInterviewRound(req, res, { ...(req.body ?? {}), id: req.params.roundId });
 });
 
 // Answers a persisted candidate-clarification question (Phase 2's

@@ -148,3 +148,62 @@ describe('Opportunity Workspace API (Phase 4)', () => {
     assert.ok(!refreshed.body.fit.openQuestions.some(q => q.id === question.id));
   });
 });
+
+describe('Interview rounds API (Phase 9.1)', () => {
+  it('creates and updates interview rounds without changing stage', async () => {
+    fs.writeFileSync(process.env.CAREER_OPS_TRACKER_PATH, JSON.stringify({
+      'opp-3': {
+        company: 'Gamma Security',
+        title: 'Technical Account Manager',
+        status: 'recruiter_screen',
+        stage: 'recruiter_screen',
+        date_updated: '2026-09-20',
+      },
+    }, null, 2));
+
+    const invalid = await request('/api/opportunities/opp-3/interviews', {
+      method: 'POST',
+      body: JSON.stringify({ roundType: 'coffee' }),
+    });
+    assert.equal(invalid.res.status, 400);
+
+    const created = await request('/api/opportunities/opp-3/interviews', {
+      method: 'POST',
+      body: JSON.stringify({ roundType: 'recruiter', scheduledAt: '2026-10-01T15:00:00Z', format: 'phone' }),
+    });
+    assert.equal(created.res.status, 200);
+    assert.equal(created.body.round.roundType, 'recruiter');
+    assert.equal(created.body.workspace.interviews.length, 1);
+    assert.equal(created.body.workspace.stage, 'recruiter_screen');
+    assert.ok(created.body.workspace.activity.some(e => e.type === 'interview_scheduled'));
+
+    const roundId = created.body.round.id;
+    const updated = await request(`/api/opportunities/opp-3/interviews/${encodeURIComponent(roundId)}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ status: 'completed', notes: 'Discussed renewals.' }),
+    });
+    assert.equal(updated.res.status, 200);
+    assert.equal(updated.body.round.status, 'completed');
+    assert.equal(updated.body.round.format, 'phone');
+    assert.ok(updated.body.workspace.activity.some(e => e.type === 'interview_completed'));
+
+    const stored = tracker()['opp-3'];
+    assert.equal(stored.interviews.length, 1);
+    assert.equal(stored.stage, 'recruiter_screen');
+    assert.equal(stored.status, 'recruiter_screen');
+  });
+
+  it('404s an unknown opportunity or round', async () => {
+    const noOpp = await request('/api/opportunities/nope/interviews', {
+      method: 'POST',
+      body: JSON.stringify({ roundType: 'panel' }),
+    });
+    assert.equal(noOpp.res.status, 404);
+
+    const noRound = await request('/api/opportunities/opp-3/interviews/round-missing', {
+      method: 'PATCH',
+      body: JSON.stringify({ status: 'completed' }),
+    });
+    assert.equal(noRound.res.status, 404);
+  });
+});

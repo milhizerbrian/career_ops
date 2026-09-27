@@ -1289,6 +1289,7 @@ function workflowEventLabel(type) {
     outreach_sent: 'Outreach sent',
     recruiter_reply: 'Recruiter reply',
     interview_scheduled: 'Interview scheduled',
+    interview_completed: 'Interview completed',
     rejected: 'Rejected',
     follow_up_done: 'Follow-up done',
     note_added: 'Note added',
