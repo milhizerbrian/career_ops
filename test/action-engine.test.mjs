@@ -159,7 +159,7 @@ describe('prioritization', () => {
 
   it('ranks a fresher, higher-fit review above an older, lower-fit one', () => {
     const fresh = opp({ id: 'job-fresh', score: 5, discoveredDate: new Date().toISOString() });
-    const old = opp({ id: 'job-old', score: 3, discoveredDate: new Date(Date.now() - 60 * 24 * 60 * 60 * 1000).toISOString() });
+    const old = opp({ id: 'job-old', score: 3.5, discoveredDate: new Date(Date.now() - 60 * 24 * 60 * 60 * 1000).toISOString() });
     const actions = buildActions([fresh, old], { state: {}, openQuestions: [], cutoff: null });
     const freshIdx = actions.findIndex(a => a.opportunityId === 'job-fresh');
     const oldIdx = actions.findIndex(a => a.opportunityId === 'job-old');
@@ -320,6 +320,43 @@ describe('pre-Sept-1 display cutoff (triggering event)', () => {
     const newLead = opp({ id: 'new-lead', discoveredDate: NEW, date_updated: NEW });
     const actions = buildActions([oldLead, newLead], { state: {}, openQuestions: [], now: NOW });
     assert.deepEqual(actions.filter(a => a.type === 'review_opportunity').map(a => a.opportunityId), ['new-lead']);
+  });
+});
+
+describe('shared 65% daily-action fit rule', async () => {
+  const { isDailyActionEligible, dailyFitPercent, DAILY_FIT_THRESHOLD } = await import('../lib/daily-eligibility.mjs');
+  const NOW = new Date('2026-09-27T12:00:00.000Z');
+  const RECENT = '2026-09-20T12:00:00.000Z';
+
+  it('uses Phase 2 fit when present, else the 0-5 evaluator score, and never ATS', () => {
+    assert.equal(DAILY_FIT_THRESHOLD, 65);
+    assert.equal(dailyFitPercent({ overallFit: 70, confidence: { level: 'High' } }), 70);
+    assert.equal(dailyFitPercent({ overallFit: 3, score: 3 }), 60, 'legacy overallFit alias is not a Phase 2 fit');
+    assert.equal(dailyFitPercent({ score: 3.25 }), 65);
+    assert.equal(dailyFitPercent({ score: 0, _ats: { score: 95 } }), null);
+  });
+
+  it('gates pre-application roles at 65% but keeps active candidacies actionable', () => {
+    assert.equal(isDailyActionEligible({ stage: 'discovered', score: 3.2 }), false);
+    assert.equal(isDailyActionEligible({ stage: 'discovered', score: 3.25 }), true);
+    assert.equal(isDailyActionEligible({ stage: 'pursuing' }), false, 'unscored cannot show it meets the bar');
+    assert.equal(isDailyActionEligible({ stage: 'applied', score: 1 }), true);
+    assert.equal(isDailyActionEligible({ status: 'hiring_manager_screen', score: 1 }), true);
+  });
+
+  it('keeps sub-65% leads out of every Home section but still acts on low-fit active candidacies', () => {
+    const low = opp({ id: 'low', score: 3, discoveredDate: RECENT, date_updated: RECENT });
+    const high = opp({ id: 'high', score: 4, discoveredDate: RECENT, date_updated: RECENT });
+    const lowInterview = opp({ id: 'low-int', score: 1, stage: 'interview', status: 'technical_screen', discoveredDate: RECENT, date_updated: RECENT,
+      workflowTimeline: [{ type: 'interview_scheduled', at: RECENT, source: 'manual', label: '', note: '' }] });
+    const actions = buildActions([low, high, lowInterview], { state: {}, openQuestions: [], now: NOW });
+    assert.ok(!actions.some(a => a.opportunityId === 'low'));
+    assert.ok(actions.some(a => a.opportunityId === 'high' && a.type === 'review_opportunity'));
+    assert.ok(actions.some(a => a.opportunityId === 'low-int' && a.type === 'prepare_interview'));
+    const home = buildHomeSummary([low, high, lowInterview], actions);
+    const surfaced = [home.topPriority, ...home.next, ...home.followUps, ...home.startMyDayQueue].filter(Boolean);
+    assert.ok(!surfaced.some(a => a.opportunityId === 'low'));
+    assert.equal(home.newOpportunities.worthReviewing, 1);
   });
 });
 

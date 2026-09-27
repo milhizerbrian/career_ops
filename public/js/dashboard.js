@@ -510,6 +510,7 @@ function matchesHealthFilter(job) {
 }
 
 function jobNeedsFollowUp(job) {
+  if (job._workflow?.actionable === false) return false; // shared daily-task gate (fit + current activity)
   const workflow = job._workflow || {};
   if (workflow.nextBestAction === 'follow_up') return true;
   if (workflow.staleness?.needsAppliedFollowUp) return true;
@@ -520,6 +521,7 @@ function jobNeedsFollowUp(job) {
 }
 
 function jobIsStaleLead(job) {
+  if (job._workflow?.actionable === false) return false; // shared daily-task gate (fit + current activity)
   const workflow = job._workflow || {};
   return workflow.staleness?.staleLead === true || (
     workflow.staleness?.stale === true && (job.status || '') === 'lead'
@@ -527,6 +529,7 @@ function jobIsStaleLead(job) {
 }
 
 function jobNeedsResume(job) {
+  if (job._workflow?.actionable === false) return false; // shared daily-task gate (fit + current activity)
   return job._workflow?.nextBestAction === 'generate_resume' || (
     (job.status || '') === 'lead' && !hasGeneratedResume(job)
   );
@@ -543,10 +546,12 @@ function hasGeneratedResume(job) {
 }
 
 function jobReadyToApply(job) {
+  if (job._workflow?.actionable === false) return false; // shared daily-task gate (fit + current activity)
   return job._workflow?.nextBestAction === 'apply';
 }
 
 function jobNeedsInterviewPrep(job) {
+  if (job._workflow?.actionable === false) return false; // shared daily-task gate (fit + current activity)
   return job._workflow?.nextBestAction === 'prep_interview' || INTERVIEW_STATUSES.has(job.status || '');
 }
 

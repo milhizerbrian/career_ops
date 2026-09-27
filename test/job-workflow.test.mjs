@@ -183,3 +183,20 @@ describe('current next actions (pre-Sept-1 cutoff)', async () => {
   });
 });
 
+describe('dashboard next actions share the 65% daily fit rule', async () => {
+  const { getCurrentNextBestAction, isDailyActionable, buildWorkflowSummary } = await import('../lib/job-workflow.mjs');
+  const NOW = new Date('2026-09-27T12:00:00.000Z');
+  const lowLead = { id: 'low', status: 'lead', score: 3, date_updated: '2026-09-05T00:00:00Z' };
+  const highLead = { id: 'high', status: 'lead', score: 4, date_updated: '2026-09-05T00:00:00Z' };
+  const lowApplied = { id: 'lowapp', status: 'applied', score: 1, date_updated: '2026-09-05T00:00:00Z', workflowTimeline: [{ type: 'applied', at: '2026-09-05T00:00:00Z' }] };
+
+  it('hides next actions and stale/follow-up counts for sub-65% leads only', () => {
+    assert.equal(isDailyActionable(lowLead), false);
+    assert.equal(getCurrentNextBestAction(lowLead, { now: NOW }), null);
+    assert.equal(getCurrentNextBestAction(highLead, { now: NOW }), 'follow_up');
+    assert.equal(getCurrentNextBestAction(lowApplied, { now: NOW }), 'follow_up');
+    const summary = buildWorkflowSummary([lowLead, highLead, lowApplied], { now: NOW, currentOnly: true });
+    assert.deepEqual(summary.urgentJobIds.sort(), ['high', 'lowapp']);
+  });
+});
+

@@ -220,7 +220,10 @@ describe('workspace read models', () => {
   });
 
   it('builds operational analytics', () => {
-    const model = buildAnalyticsSummary([job], { now: new Date('2026-05-04T12:00:00.000Z') });
+    // Command Center sections only surface jobs with activity on/after the
+    // 2026-09-01 display cutoff, so this fixture is dated after it.
+    const recentJob = { ...job, date_updated: '2026-09-10' };
+    const model = buildAnalyticsSummary([recentJob], { now: new Date('2026-09-27T12:00:00.000Z') });
     assert.equal(model.activeOpportunities, 1);
     assert.equal(model.stageDistribution.applied, 1);
     assert.equal(model.averageActiveAtsScore, 82);
