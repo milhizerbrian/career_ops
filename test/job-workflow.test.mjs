@@ -158,3 +158,28 @@ describe('activity display cutoff', async () => {
     assert.equal(job.workflowTimeline.length, 1);
   });
 });
+
+describe('current next actions (pre-Sept-1 cutoff)', async () => {
+  const { getCurrentNextBestAction, detectCurrentWorkflowStaleness, buildWorkflowSummary, getNextBestAction } = await import('../lib/job-workflow.mjs');
+  const NOW = new Date('2026-09-27T12:00:00.000Z');
+  const oldLead = { id: 'old', status: 'lead', date_updated: '2026-07-01T00:00:00Z' };
+  const oldApplied = { id: 'oldapp', status: 'applied', date_updated: '2026-07-01T00:00:00Z', workflowTimeline: [{ type: 'applied', at: '2026-07-01T00:00:00Z' }] };
+  const newApplied = { id: 'newapp', status: 'applied', date_updated: '2026-09-05T00:00:00Z', workflowTimeline: [{ type: 'applied', at: '2026-09-05T00:00:00Z' }] };
+
+  it('suppresses next actions and stale flags triggered only by pre-cutoff activity', () => {
+    assert.equal(getNextBestAction(oldApplied, { now: NOW }), 'follow_up');
+    assert.equal(getCurrentNextBestAction(oldApplied, { now: NOW }), null);
+    const st = detectCurrentWorkflowStaleness(oldLead, { now: NOW });
+    assert.equal(st.stale, false);
+    assert.equal(st.staleLead, false);
+  });
+
+  it('keeps post-cutoff follow-ups and counts only current jobs in the summary', () => {
+    assert.equal(getCurrentNextBestAction(newApplied, { now: NOW }), 'follow_up');
+    const summary = buildWorkflowSummary([oldLead, oldApplied, newApplied], { now: NOW, currentOnly: true });
+    assert.equal(summary.urgentFollowUps, 1);
+    assert.deepEqual(summary.urgentJobIds, ['newapp']);
+    assert.equal(buildWorkflowSummary([oldLead, oldApplied, newApplied], { now: NOW }).urgentFollowUps, 3, 'unchanged without currentOnly');
+  });
+});
+

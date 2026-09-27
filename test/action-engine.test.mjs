@@ -160,7 +160,7 @@ describe('prioritization', () => {
   it('ranks a fresher, higher-fit review above an older, lower-fit one', () => {
     const fresh = opp({ id: 'job-fresh', score: 5, discoveredDate: new Date().toISOString() });
     const old = opp({ id: 'job-old', score: 3, discoveredDate: new Date(Date.now() - 60 * 24 * 60 * 60 * 1000).toISOString() });
-    const actions = buildActions([fresh, old], { state: {}, openQuestions: [] });
+    const actions = buildActions([fresh, old], { state: {}, openQuestions: [], cutoff: null });
     const freshIdx = actions.findIndex(a => a.opportunityId === 'job-fresh');
     const oldIdx = actions.findIndex(a => a.opportunityId === 'job-old');
     assert.ok(freshIdx < oldIdx);
@@ -291,3 +291,35 @@ describe('persisted action decisions', () => {
     }
   });
 });
+
+describe('pre-Sept-1 display cutoff (triggering event)', () => {
+  const OLD = '2026-08-15T12:00:00.000Z';
+  const NEW = '2026-09-10T12:00:00.000Z';
+  const NOW = new Date('2026-09-27T12:00:00.000Z');
+
+  it('hides a follow-up whose application and last activity predate the cutoff', () => {
+    const job = opp({ id: 'old-applied', stage: 'applied', status: 'applied', discoveredDate: OLD, date_updated: OLD,
+      workflowTimeline: [{ type: 'applied', at: OLD, source: 'manual', label: '', note: '' }] });
+    const actions = buildActions([job], { state: {}, openQuestions: [], now: NOW });
+    assert.equal(actions.length, 0);
+    const all = buildActions([job], { state: {}, openQuestions: [], now: NOW, cutoff: null });
+    assert.ok(all.some(a => a.type === 'follow_up'), 'still generated when the cutoff is disabled');
+  });
+
+  it('keeps actions for an old opportunity with a genuine post-cutoff event', () => {
+    const job = opp({ id: 'old-but-active', stage: 'interview', status: 'technical_screen', discoveredDate: OLD, date_updated: OLD,
+      workflowTimeline: [{ type: 'interview_scheduled', at: NEW, source: 'manual', label: '', note: '' }] });
+    const actions = buildActions([job], { state: {}, openQuestions: [], now: NOW });
+    const prep = actions.find(a => a.type === 'prepare_interview');
+    assert.ok(prep);
+    assert.equal(prep.triggeredAt, NEW);
+  });
+
+  it('dates new-role reviews by discovery, not later noise', () => {
+    const oldLead = opp({ id: 'old-lead', discoveredDate: OLD, date_updated: NEW });
+    const newLead = opp({ id: 'new-lead', discoveredDate: NEW, date_updated: NEW });
+    const actions = buildActions([oldLead, newLead], { state: {}, openQuestions: [], now: NOW });
+    assert.deepEqual(actions.filter(a => a.type === 'review_opportunity').map(a => a.opportunityId), ['new-lead']);
+  });
+});
+
