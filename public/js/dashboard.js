@@ -1192,6 +1192,7 @@ function renderContactWorkspace(job) {
         <option value="hiring_manager">Hiring Manager</option>
         <option value="referral">Referral</option>
         <option value="employee">Employee</option>
+        <option value="interviewer">Interviewer</option>
       </select>
       <select class="contact-response bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-xs outline-none focus:ring-2 focus:ring-blue-600/20">
         <option value="not_contacted">Not contacted</option>
@@ -2406,6 +2407,8 @@ function renderRoundForm(round, contacts) {
   const r = round || {};
   const inputCls = 'mt-1 w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-xs outline-none focus:ring-2 focus:ring-blue-600/20';
   const selectedContacts = new Set(r.contactIds || []);
+  // Interviewer contacts (Phase 9.4) listed first.
+  contacts = [...(contacts || [])].sort((a, b) => Number(b.relationshipType === 'interviewer') - Number(a.relationshipType === 'interviewer'));
   return `<div class="interview-round-form space-y-3 pt-3" data-round-id="${esc(r.id || '')}">
     <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
       <label class="text-xs text-slate-500">Round type
@@ -2428,7 +2431,7 @@ function renderRoundForm(round, contacts) {
       <p class="text-xs text-slate-500 mb-1">Interviewers</p>
       ${(contacts || []).length ? `<div class="flex flex-wrap gap-2">${contacts.map(c => `<label class="text-xs text-slate-600 bg-slate-50 border border-slate-200 rounded-lg px-2 py-1 flex items-center gap-1.5">
         <input type="checkbox" class="round-contact" value="${esc(c.id)}" ${selectedContacts.has(c.id) ? 'checked' : ''}>${esc(c.name)}${c.title ? ` <span class="text-slate-400">· ${esc(c.title)}</span>` : ''}
-      </label>`).join('')}</div>` : '<p class="text-xs text-slate-400">No contacts on this opportunity yet. Add interviewers in the Contacts tab, then link them here.</p>'}
+      </label>`).join('')}</div>` : '<p class="text-xs text-slate-400">No contacts on this opportunity yet. Add interviewers (relationship: Interviewer) in the Contacts tab, then link them here.</p>'}
     </div>
     <label class="text-xs text-slate-500 block">Notes
       <textarea class="round-notes ${inputCls} resize-y" rows="4" maxlength="5000">${esc(r.notes || '')}</textarea>
@@ -2440,6 +2443,31 @@ function renderRoundForm(round, contacts) {
       <button class="round-save-btn bg-primary text-white text-xs font-semibold rounded-lg px-3 py-1.5 hover:opacity-90">${r.id ? 'Save round' : 'Add round'}</button>
       <p class="round-save-error hidden text-xs text-rose-600"></p>
     </div>
+  </div>`;
+}
+
+// Phase 9.5: thank-you drafts for a completed round. Drafts live on the
+// interviewer contact (contact.outreachDrafts, type thank_you, roundId);
+// "Mark thank-you sent" records a follow_up_done event, which clears the
+// Command Center's send_thank_you action.
+function renderRoundThankYou(job, round, contacts) {
+  const linked = (round.contactIds || []).map(id => contacts.find(c => c.id === id)).filter(Boolean);
+  const drafts = linked.flatMap(c => (c.outreachDrafts || [])
+    .filter(d => d.type === 'thank_you' && d.roundId === round.id)
+    .map(d => ({ ...d, contactName: c.name })))
+    .sort((a, b) => String(b.generatedAt).localeCompare(String(a.generatedAt)));
+  const sent = (job.activity || []).some(e => e.type === 'follow_up_done' && round.completedAt && e.at >= round.completedAt);
+  return `<div class="round-thank-you mt-2 bg-slate-50 border border-slate-100 rounded-lg p-2" data-round-id="${esc(round.id)}">
+    <p class="text-[10px] font-bold uppercase tracking-wide text-slate-400 mb-1">Thank-you</p>
+    ${sent ? '<p class="text-xs font-semibold text-emerald-700">Thank-you marked sent.</p>' : ''}
+    ${linked.length ? `<div class="flex flex-wrap gap-2">${linked.map(c => `<button class="round-thank-you-btn text-[11px] font-semibold text-slate-600 border border-slate-200 bg-white rounded-lg px-2.5 py-1 hover:bg-slate-50" data-round-id="${esc(round.id)}" data-contact-id="${esc(c.id)}">Draft thank-you to ${esc(c.name)}</button>`).join('')}</div>`
+      : '<p class="text-xs text-slate-400">Link an interviewer to this round to draft a thank-you.</p>'}
+    ${drafts.map(d => `<div class="mt-2">
+      <p class="text-[10px] font-bold uppercase tracking-wide text-slate-400 mb-1">To ${esc(d.contactName)} · ${fmtDateTime(d.generatedAt)}${d.source === 'fallback' ? ' · template' : ''}</p>
+      <textarea readonly class="w-full bg-white border border-slate-200 rounded-lg px-3 py-2 text-xs text-slate-600 leading-relaxed resize-y" rows="6">${esc(d.text)}</textarea>
+    </div>`).join('')}
+    ${sent ? '' : `<button class="round-thank-you-sent-btn mt-2 text-[11px] font-semibold text-emerald-700 border border-emerald-200 bg-white rounded-lg px-2.5 py-1 hover:bg-emerald-50" data-round-id="${esc(round.id)}" data-round-label="${esc(interviewRoundTypeLabel(round.roundType))}">Mark thank-you sent</button>`}
+    <p class="round-thank-you-error hidden text-xs text-rose-600 mt-1"></p>
   </div>`;
 }
 
@@ -2460,6 +2488,7 @@ function renderInterviewRoundsCard(job) {
       ${names.length ? `<p class="text-xs text-slate-500 mt-1">With: ${esc(names.join(', '))}</p>` : ''}
       ${round.notes ? `<p class="text-xs text-slate-600 mt-2 whitespace-pre-wrap break-words">${esc(round.notes)}</p>` : ''}
       ${round.outcome ? `<p class="text-xs text-slate-700 mt-1"><strong>Outcome:</strong> ${esc(round.outcome)}</p>` : ''}
+      ${round.status === 'completed' ? renderRoundThankYou(job, round, contacts) : ''}
       <details class="mt-2"><summary class="text-xs font-semibold text-blue-600 cursor-pointer">Edit round and notes</summary>${renderRoundForm(round, contacts)}</details>
     </div>`;
   }).join('') : '<p class="text-sm text-slate-400">No interview rounds recorded yet.</p>';
@@ -2621,9 +2650,48 @@ function bindOppTabContentActions(root) {
   root.querySelectorAll('.interview-round-form').forEach(form => {
     form.querySelector('.round-save-btn')?.addEventListener('click', () => submitInterviewRound(form, currentJobDetailId));
   });
+  root.querySelectorAll('.round-thank-you-btn').forEach(btn => {
+    btn.addEventListener('click', () => submitThankYouDraft(btn, currentJobDetailId));
+  });
+  root.querySelectorAll('.round-thank-you-sent-btn').forEach(btn => {
+    btn.addEventListener('click', () => submitThankYouSent(btn, currentJobDetailId));
+  });
   root.querySelectorAll('.prep-open-fit-tab').forEach(btn => {
     btn.addEventListener('click', () => showJobDetail(currentJobDetailId, { push: false, tab: 'fit' }));
   });
+}
+
+async function runThankYouAction(btn, work) {
+  const errorEl = btn.closest('.round-thank-you')?.querySelector('.round-thank-you-error');
+  const label = btn.textContent;
+  btn.disabled = true;
+  btn.textContent = 'Working...';
+  errorEl?.classList.add('hidden');
+  try {
+    await work();
+    invalidateWorkspaceCaches();
+    showJobDetail(currentJobDetailId, { push: false, tab: 'interview' });
+  } catch (e) {
+    if (errorEl) { errorEl.textContent = e.message; errorEl.classList.remove('hidden'); }
+    btn.disabled = false;
+    btn.textContent = label;
+  }
+}
+
+function submitThankYouDraft(btn, id) {
+  return runThankYouAction(btn, () => generateContactOutreachDraft(id, {
+    contactId: btn.dataset.contactId,
+    type: 'thank_you',
+    roundId: btn.dataset.roundId,
+  }));
+}
+
+function submitThankYouSent(btn, id) {
+  return runThankYouAction(btn, () => postWorkflowEvent(id, {
+    type: 'follow_up_done',
+    label: 'Thank-you sent',
+    note: `${btn.dataset.roundLabel} interview`,
+  }));
 }
 
 async function submitInterviewRound(form, id) {
@@ -3931,6 +3999,7 @@ const ACTION_TYPE_ICON = {
   follow_up: 'forum',
   prepare_interview: 'event_available',
   record_outcome: 'flag',
+  send_thank_you: 'mail',
 };
 
 async function loadHome() {
@@ -3970,6 +4039,7 @@ const ACTION_TYPE_TAB = {
   follow_up: 'application',
   prepare_interview: 'interview',
   record_outcome: 'activity',
+  send_thank_you: 'interview',
 };
 
 function topPriorityCard(action) {

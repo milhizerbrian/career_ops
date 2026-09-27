@@ -84,6 +84,15 @@ describe('frontend ES modules', () => {
     assert.match(dashboard, /int-next-round/);
   });
 
+  it('wires Phase 9.4/9.5 interviewer contacts and thank-you follow-up', () => {
+    const dashboard = read('public/js/dashboard.js');
+    assert.match(dashboard, /<option value="interviewer">Interviewer<\/option>/);
+    assert.match(dashboard, /send_thank_you: 'mail'/);
+    assert.match(dashboard, /type: 'thank_you',\s+roundId: btn\.dataset\.roundId/);
+    assert.match(dashboard, /type: 'follow_up_done',\s+label: 'Thank-you sent'/);
+    assert.match(dashboard, /round\.status === 'completed' \? renderRoundThankYou\(job, round, contacts\)/);
+  });
+
   it('exposes sort handler for existing table header onclick attributes', () => {
     const html = read('public/index.html');
     const dashboard = read('public/js/dashboard.js');
@@ -448,6 +457,7 @@ describe('frontend ES modules', () => {
       ['follow_up', 'application'],
       ['prepare_interview', 'interview'],
       ['record_outcome', 'activity'],
+      ['send_thank_you', 'interview'],
     ]) {
       assert.match(dashboard, new RegExp(`${type}:\\s*'${tab}'`));
     }
