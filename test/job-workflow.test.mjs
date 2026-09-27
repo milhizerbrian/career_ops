@@ -130,3 +130,31 @@ describe('job workflow decisions', () => {
     assert.equal(summary.upcomingInterviews, 1);
   });
 });
+
+describe('activity display cutoff', async () => {
+  const { filterActivityForDisplay, ACTIVITY_DISPLAY_CUTOFF, buildWorkflowTimeline } = await import('../lib/job-workflow.mjs');
+
+  it('hides activity before 2026-09-01 00:00 CDT and keeps everything from then on', () => {
+    assert.equal(ACTIVITY_DISPLAY_CUTOFF, '2026-09-01T05:00:00.000Z');
+    const events = [
+      { type: 'applied', at: '2026-08-31T23:59:00-05:00' },
+      { type: 'discovered', at: '2026-09-01T00:00:00-05:00' },
+      { type: 'note_added', at: '2026-09-15T12:00:00Z' },
+      { type: 'bad', at: 'not a date' },
+    ];
+    assert.deepEqual(filterActivityForDisplay(events).map(e => e.type), ['discovered', 'note_added']);
+    assert.deepEqual(filterActivityForDisplay(null), []);
+  });
+
+  it('filters generated entries too, without mutating stored history', () => {
+    const job = {
+      status: 'applied',
+      date_updated: '2026-06-01T00:00:00Z',
+      last_email_date: '2026-09-10T00:00:00Z',
+      workflowTimeline: [{ type: 'applied', at: '2026-05-01T00:00:00Z', source: 'manual' }],
+    };
+    const shown = filterActivityForDisplay(buildWorkflowTimeline(job));
+    assert.deepEqual(shown.map(e => e.type), ['recruiter_reply']);
+    assert.equal(job.workflowTimeline.length, 1);
+  });
+});

@@ -201,4 +201,23 @@ describe('buildOpportunityWorkspace', () => {
     assert.ok(prep.questionsToAsk.length > 0);
     assert.equal(prep.checklist.find(c => c.id === 'round_scheduled').done, true);
   });
+
+  it('hides activity before the display cutoff but keeps it stored', () => {
+    writeTracker({
+      'job-old-activity': {
+        company: 'Acme', title: 'CSM', status: 'applied', stage: 'applied', date_updated: '2026-09-20',
+        workflowTimeline: [
+          { type: 'applied', at: '2026-07-01T00:00:00.000Z', source: 'manual', label: '', note: '' },
+          { type: 'note_added', at: '2026-09-02T00:00:00.000Z', source: 'manual', label: '', note: 'recent' },
+        ],
+      },
+    });
+    const ws = mod.buildOpportunityWorkspace('job-old-activity');
+    assert.ok(!ws.activity.some(e => e.at < '2026-09-01T05:00:00.000Z'));
+    assert.ok(ws.activity.some(e => e.type === 'note_added'));
+    assert.ok(!ws._workflow.timeline.some(e => e.at < '2026-09-01T05:00:00.000Z'));
+    const stored = JSON.parse(fs.readFileSync(process.env.CAREER_OPS_TRACKER_PATH, 'utf8'))['job-old-activity'].workflowTimeline;
+    assert.equal(stored.length, 2);
+    assert.equal(ws.stage, 'applied');
+  });
 });
