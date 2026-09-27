@@ -64,10 +64,16 @@ Portal scan:
 npm run scan
 ```
 
-LinkedIn scan:
+LinkedIn scan (authenticated browser session):
 
 ```bash
 npm run scan:linkedin
+```
+
+LinkedIn guest API fallback:
+
+```bash
+npm run scan:linkedin:guest
 ```
 
 Evaluate current pipeline:
