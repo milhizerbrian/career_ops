@@ -357,6 +357,9 @@ describe('shared 65% daily-action fit rule', async () => {
     const surfaced = [home.topPriority, ...home.next, ...home.followUps, ...home.startMyDayQueue].filter(Boolean);
     assert.ok(!surfaced.some(a => a.opportunityId === 'low'));
     assert.equal(home.newOpportunities.worthReviewing, 1);
+    assert.equal(home.newOpportunities.discovered, 1, 'only fit-eligible, post-cutoff discoveries count as new');
+    const oldHigh = opp({ id: 'old-high', score: 4, discoveredDate: '2026-08-01T00:00:00.000Z' });
+    assert.equal(buildHomeSummary([low, high, oldHigh], actions).newOpportunities.discovered, 1);
   });
 });
 
