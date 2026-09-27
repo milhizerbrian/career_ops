@@ -63,6 +63,27 @@ describe('frontend ES modules', () => {
     }
   });
 
+  it('wires the Phase 9.3 Interview Command Center to the interview APIs and prep read model', () => {
+    const dashboard = read('public/js/dashboard.js');
+    const api = read('public/js/api.js');
+    assert.ok(fs.existsSync(path.resolve(APP_ROOT, 'public/js/interview-ui.js')));
+    assert.match(dashboard, /from '\.\/interview-ui\.js'/);
+    assert.match(api, /function createInterviewRound\(opportunityId, body\)/);
+    assert.match(api, /'\/interviews'/);
+    assert.match(api, /function updateInterviewRound\(opportunityId, roundId, body\)/);
+    assert.match(dashboard, /await updateInterviewRound\(id, roundId, payload\)/);
+    assert.match(dashboard, /await createInterviewRound\(id, payload\)/);
+    for (const section of ['INTERVIEW ROUNDS', 'BRIEFING', 'PREP CHECKLIST', 'LIKELY QUESTIONS', 'RECOMMENDED VERIFIED EVIDENCE', 'GAPS AND UNKNOWNS TO PREPARE', 'QUESTIONS TO ASK']) {
+      assert.match(dashboard, new RegExp(`'${section}'`));
+    }
+    assert.match(dashboard, /job\.interviewPrep/);
+    assert.match(dashboard, /class="round-notes/);
+    assert.match(dashboard, /type="datetime-local" class="round-scheduled/);
+    // Interviews page shows the next scheduled round per loop.
+    assert.match(dashboard, /const nextRound = nextScheduledRound\(job\.interviews\)/);
+    assert.match(dashboard, /int-next-round/);
+  });
+
   it('exposes sort handler for existing table header onclick attributes', () => {
     const html = read('public/index.html');
     const dashboard = read('public/js/dashboard.js');

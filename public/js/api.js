@@ -162,6 +162,22 @@ export function postOpportunityStage(opportunityId, stage, reason = '') {
   });
 }
 
+export function createInterviewRound(opportunityId, body) {
+  return jsonFetch('/api/opportunities/' + encodeURIComponent(opportunityId) + '/interviews', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+}
+
+export function updateInterviewRound(opportunityId, roundId, body) {
+  return jsonFetch('/api/opportunities/' + encodeURIComponent(opportunityId) + '/interviews/' + encodeURIComponent(roundId), {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+}
+
 export function answerCandidateQuestion(questionId, answer) {
   return jsonFetch('/api/candidate-questions/' + encodeURIComponent(questionId) + '/answer', {
     method: 'POST',

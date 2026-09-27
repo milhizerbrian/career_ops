@@ -3,6 +3,7 @@ import {
   answerCandidateQuestion,
   attachGmailAmbiguity,
   createDocs,
+  createInterviewRound,
   deleteJobRequest,
   dismissGmailAmbiguity,
   fetchAnalyticsSummary,
@@ -26,12 +27,23 @@ import {
   promoteQuestionToEvidence,
   submitResumeGapAnswers,
   updateEvidenceFact,
+  updateInterviewRound,
   upsertJobContact,
 } from './api.js';
 import { sortJobsBy } from './jobs-table.js';
 import { STAGE_LABELS, STAGE_PROGRESS, humanizeStage, progressColor } from './progress.js';
 import { INTERVIEW_STATUSES, STATUS_ORDER, createDashboardMeta } from './state.js';
 import { normalizeSource, sourceBadgeCls, sourceDisplayLabel } from './source-badges.js';
+import {
+  INTERVIEW_ROUND_FORMAT_OPTIONS,
+  INTERVIEW_ROUND_STATUS_OPTIONS,
+  INTERVIEW_ROUND_TYPE_OPTIONS,
+  buildRoundPayload,
+  fromDatetimeLocalValue,
+  interviewRoundTypeLabel,
+  nextScheduledRound,
+  toDatetimeLocalValue,
+} from './interview-ui.js';
 
 // ─── State ────────────────────────────────────────────────────────────────────
 let allJobs    = [];
@@ -1590,6 +1602,7 @@ function renderInterviews() {
     const atsColor = atsScoreColor(job);
     const atsStr   = atsScoreLabel(job);
     const nextStep = compactNextStep(job);
+    const nextRound = nextScheduledRound(job.interviews);
     const detailId = 'int-detail-' + job.id;
 
     const tr = document.createElement('tr');
@@ -1604,6 +1617,7 @@ function renderInterviews() {
           <div class="min-w-0">
             <p class="font-semibold text-on-surface truncate max-w-xs">${esc(job.company)}</p>
             <p class="text-xs text-slate-500 truncate max-w-xs">${esc(job.title)}</p>
+            ${nextRound ? `<p class="int-next-round text-[11px] font-semibold text-amber-700 truncate max-w-xs mt-0.5">Next interview: ${esc(interviewRoundTypeLabel(nextRound.roundType))} · ${nextRound.scheduledAt ? fmtDateTime(nextRound.scheduledAt) : 'date not set'}</p>` : ''}
             ${nextStep ? `<p class="text-[11px] text-slate-400 truncate max-w-xs mt-0.5">Next: ${esc(nextStep)}</p>` : ''}
           </div>
         </div>
@@ -2353,21 +2367,196 @@ function renderApplicationTab(job) {
   </div>`;
 }
 
+// ─── Phase 9.3: Interview Command Center (Interview tab) ────────────────────
+// Renders Phase 9.1 rounds (job.interviews) and the Phase 9.2 read model
+// (job.interviewPrep). Evidence shown here is exactly what the server's
+// verified-only prep model returns; nothing is generated client-side.
+const PREP_TIER_LABELS = {
+  strong_match: 'Strong Match',
+  partial_match: 'Partial Match',
+  unknown: 'Unknown',
+  gap: 'Gap',
+  blocker: 'Blocker',
+};
+
+const LIKELY_QUESTION_BASIS = {
+  round: ['Round', 'bg-blue-50 text-blue-700'],
+  requirement: ['Requirement', 'bg-emerald-50 text-emerald-700'],
+  gap: ['Gap', 'bg-rose-50 text-rose-700'],
+};
+
+function interviewCard(title, bodyHtml, extraClass = '') {
+  return `<div class="bg-white rounded-xl border border-slate-200 shadow-sm p-4 ${extraClass}">
+    <p class="text-label-caps font-label-caps text-slate-500 mb-3">${esc(title)}</p>
+    ${bodyHtml}
+  </div>`;
+}
+
+function optionTags(options, selected) {
+  return options.map(([value, label]) => `<option value="${esc(value)}" ${value === selected ? 'selected' : ''}>${esc(label)}</option>`).join('');
+}
+
+function roundContactNames(round, contacts) {
+  const byId = new Map((contacts || []).map(c => [c.id, c]));
+  return (round.contactIds || []).map(id => byId.get(id)).filter(Boolean)
+    .map(c => c.title ? `${c.name} (${c.title})` : c.name);
+}
+
+function renderRoundForm(round, contacts) {
+  const r = round || {};
+  const inputCls = 'mt-1 w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-xs outline-none focus:ring-2 focus:ring-blue-600/20';
+  const selectedContacts = new Set(r.contactIds || []);
+  return `<div class="interview-round-form space-y-3 pt-3" data-round-id="${esc(r.id || '')}">
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+      <label class="text-xs text-slate-500">Round type
+        <select class="round-type ${inputCls}">${optionTags(INTERVIEW_ROUND_TYPE_OPTIONS, r.roundType || 'recruiter')}</select>
+      </label>
+      <label class="text-xs text-slate-500">Status
+        <select class="round-status ${inputCls}">${optionTags(INTERVIEW_ROUND_STATUS_OPTIONS, r.status || 'scheduled')}</select>
+      </label>
+      <label class="text-xs text-slate-500">Date and time
+        <input type="datetime-local" class="round-scheduled ${inputCls}" value="${esc(toDatetimeLocalValue(r.scheduledAt))}">
+      </label>
+      <label class="text-xs text-slate-500">Format
+        <select class="round-format ${inputCls}">${optionTags(INTERVIEW_ROUND_FORMAT_OPTIONS, r.format || '')}</select>
+      </label>
+      <label class="text-xs text-slate-500 md:col-span-2">Location or meeting link
+        <input class="round-location ${inputCls}" maxlength="300" value="${esc(r.location || '')}">
+      </label>
+    </div>
+    <div>
+      <p class="text-xs text-slate-500 mb-1">Interviewers</p>
+      ${(contacts || []).length ? `<div class="flex flex-wrap gap-2">${contacts.map(c => `<label class="text-xs text-slate-600 bg-slate-50 border border-slate-200 rounded-lg px-2 py-1 flex items-center gap-1.5">
+        <input type="checkbox" class="round-contact" value="${esc(c.id)}" ${selectedContacts.has(c.id) ? 'checked' : ''}>${esc(c.name)}${c.title ? ` <span class="text-slate-400">· ${esc(c.title)}</span>` : ''}
+      </label>`).join('')}</div>` : '<p class="text-xs text-slate-400">No contacts on this opportunity yet. Add interviewers in the Contacts tab, then link them here.</p>'}
+    </div>
+    <label class="text-xs text-slate-500 block">Notes
+      <textarea class="round-notes ${inputCls} resize-y" rows="4" maxlength="5000">${esc(r.notes || '')}</textarea>
+    </label>
+    <label class="text-xs text-slate-500 block">Outcome
+      <textarea class="round-outcome ${inputCls} resize-y" rows="2" maxlength="1000">${esc(r.outcome || '')}</textarea>
+    </label>
+    <div class="flex items-center gap-2">
+      <button class="round-save-btn bg-primary text-white text-xs font-semibold rounded-lg px-3 py-1.5 hover:opacity-90">${r.id ? 'Save round' : 'Add round'}</button>
+      <p class="round-save-error hidden text-xs text-rose-600"></p>
+    </div>
+  </div>`;
+}
+
+function renderInterviewRoundsCard(job) {
+  const rounds = Array.isArray(job.interviews) ? job.interviews : [];
+  const contacts = Array.isArray(job.contacts) ? job.contacts : [];
+  const list = rounds.length ? rounds.map(round => {
+    const names = roundContactNames(round, contacts);
+    const meta = [
+      INTERVIEW_ROUND_STATUS_OPTIONS.find(([v]) => v === round.status)?.[1] || round.status,
+      round.scheduledAt ? fmtDateTime(round.scheduledAt) : 'No date set',
+      INTERVIEW_ROUND_FORMAT_OPTIONS.find(([v]) => v === round.format && v)?.[1] || '',
+    ].filter(Boolean).join(' · ');
+    return `<div class="interview-round border-b border-slate-100 last:border-0 py-3" data-round-id="${esc(round.id)}">
+      <p class="text-sm font-semibold text-slate-700">${esc(interviewRoundTypeLabel(round.roundType))} interview</p>
+      <p class="text-[11px] text-slate-400">${esc(meta)}</p>
+      ${round.location ? `<p class="text-xs text-slate-500 mt-1 break-all">${esc(round.location)}</p>` : ''}
+      ${names.length ? `<p class="text-xs text-slate-500 mt-1">With: ${esc(names.join(', '))}</p>` : ''}
+      ${round.notes ? `<p class="text-xs text-slate-600 mt-2 whitespace-pre-wrap break-words">${esc(round.notes)}</p>` : ''}
+      ${round.outcome ? `<p class="text-xs text-slate-700 mt-1"><strong>Outcome:</strong> ${esc(round.outcome)}</p>` : ''}
+      <details class="mt-2"><summary class="text-xs font-semibold text-blue-600 cursor-pointer">Edit round and notes</summary>${renderRoundForm(round, contacts)}</details>
+    </div>`;
+  }).join('') : '<p class="text-sm text-slate-400">No interview rounds recorded yet.</p>';
+  return interviewCard('INTERVIEW ROUNDS', `${list}
+    <details class="mt-3 border-t border-slate-100 pt-3" ${rounds.length ? '' : 'open'}>
+      <summary class="text-xs font-semibold text-blue-600 cursor-pointer">Add interview round</summary>
+      ${renderRoundForm(null, contacts)}
+    </details>`);
+}
+
+function renderPrepBriefing(prep) {
+  const b = prep.briefing || {};
+  const next = prep.nextRound;
+  const fields = [
+    ['Stage', b.stageLabel || b.stage || '—'],
+    ['Location', b.location || '—'],
+    ['Compensation', b.compensation || '—'],
+    ['Seniority', b.seniority || '—'],
+    ['Domains', (b.domains || []).join(', ') || '—'],
+    ['Fit', b.fit ? `${b.fit.overallScore}% · ${b.fit.pursuitClassification}` : 'Not scored'],
+  ];
+  return interviewCard('BRIEFING', `
+    <p class="text-sm font-semibold text-slate-800">${esc(b.company || 'Unknown company')}</p>
+    <p class="text-xs text-slate-500 mb-3">${esc(b.title || 'Unknown role')}</p>
+    ${next ? `<p class="text-xs font-semibold text-amber-700 bg-amber-50 rounded px-3 py-2 mb-3">Next: ${esc(prep.roundTypeLabel || interviewRoundTypeLabel(next.roundType))} interview · ${next.scheduledAt ? fmtDateTime(next.scheduledAt) : 'date not set'}</p>` : '<p class="text-xs text-slate-400 mb-3">No upcoming round scheduled.</p>'}
+    <div class="grid grid-cols-2 gap-2 text-xs mb-3">${fields.map(([label, value]) => `<div><p class="text-[10px] font-bold uppercase tracking-wide text-slate-400">${esc(label)}</p><p class="text-slate-700">${esc(value)}</p></div>`).join('')}</div>
+    ${b.jdReason ? `<p class="text-xs text-slate-400">${esc(b.jdReason)}</p>` : ''}
+    ${renderSummaryList('Key responsibilities', b.responsibilities)}
+    ${(b.hardBlockers || []).length ? `<div class="bg-rose-50 border border-rose-200 rounded-lg p-2"><p class="text-[10px] font-bold uppercase tracking-wide text-rose-700 mb-1">Blockers</p>
+      <ul class="text-xs text-rose-700 list-disc list-inside">${b.hardBlockers.map(x => `<li>${esc(x)}</li>`).join('')}</ul></div>` : ''}`);
+}
+
+function renderPrepChecklist(prep) {
+  const items = prep.checklist || [];
+  return interviewCard('PREP CHECKLIST', `<ul class="space-y-2">${items.map(item => `<li class="flex items-start gap-2 text-xs">
+    <span class="material-symbols-outlined text-base leading-none ${item.done ? 'text-emerald-600' : 'text-slate-300'}">${item.done ? 'check_circle' : 'radio_button_unchecked'}</span>
+    <span class="${item.done ? 'text-slate-500' : 'text-slate-700'}">${esc(item.label)}${item.detail ? ` <span class="text-slate-400">(${esc(item.detail)})</span>` : ''}</span>
+  </li>`).join('')}</ul>`);
+}
+
+function renderLikelyQuestions(prep) {
+  const questions = prep.likelyQuestions || [];
+  return interviewCard('LIKELY QUESTIONS', questions.length ? `<ol class="space-y-2 list-decimal list-inside">${questions.map(q => {
+    const [label, cls] = LIKELY_QUESTION_BASIS[q.basis] || ['', ''];
+    return `<li class="text-xs text-slate-700">${esc(q.question)}${label ? ` <span class="text-[10px] font-bold uppercase rounded px-1.5 py-0.5 ${cls}">${esc(label)}</span>` : ''}</li>`;
+  }).join('')}</ol>` : '<p class="text-sm text-slate-400">No likely questions available.</p>');
+}
+
+function renderPrepEvidence(prep) {
+  const evidence = prep.evidence || [];
+  const body = evidence.length ? evidence.map(e => {
+    const shown = e.facts.slice(0, 3);
+    const rest = e.facts.slice(3);
+    const factItem = f => `<li>${esc(f.fact)}${f.employer ? ` <span class="text-slate-400">(${esc(f.employer)})</span>` : ''}</li>`;
+    return `<div class="border-b border-slate-100 last:border-0 py-3">
+      <p class="text-xs font-semibold text-slate-700 mb-1">${esc(e.requirement)} <span class="text-[10px] font-bold uppercase rounded px-1.5 py-0.5 ${FIT_TIER_COLOR[e.tier] || 'bg-slate-100 text-slate-600'}">${esc(PREP_TIER_LABELS[e.tier] || e.tier)}</span></p>
+      ${shown.length ? `<ul class="text-xs text-slate-600 list-disc list-inside space-y-0.5">${shown.map(factItem).join('')}</ul>` : ''}
+      ${rest.length ? `<details class="mt-1"><summary class="text-[11px] text-blue-600 cursor-pointer">${rest.length} more verified fact${rest.length === 1 ? '' : 's'}</summary><ul class="text-xs text-slate-600 list-disc list-inside space-y-0.5 mt-1">${rest.map(factItem).join('')}</ul></details>` : ''}
+      ${e.stories.length ? e.stories.map(st => `<div class="mt-2 bg-slate-50 border border-slate-100 rounded-lg p-2 text-xs text-slate-600 space-y-0.5">
+        <p class="text-[10px] font-bold uppercase tracking-wide text-slate-400">STAR story${st.employer ? ` · ${esc(st.employer)}` : ''}</p>
+        <p><strong>S:</strong> ${esc(st.situation)}</p><p><strong>T:</strong> ${esc(st.task)}</p><p><strong>A:</strong> ${esc(st.action)}</p><p><strong>R:</strong> ${esc(st.result)}</p>
+      </div>`).join('') : `<p class="text-[11px] text-slate-400 mt-1">${esc(e.storyNote)}</p>`}
+    </div>`;
+  }).join('') : '<p class="text-sm text-slate-400">No verified evidence matched this role\'s requirements yet.</p>';
+  return interviewCard('RECOMMENDED VERIFIED EVIDENCE', `${prep.evidencePolicy ? `<p class="text-[11px] text-slate-400 mb-2">${esc(prep.evidencePolicy)}</p>` : ''}${body}`);
+}
+
+function renderPrepGaps(prep) {
+  const gaps = prep.gaps || [];
+  return interviewCard('GAPS AND UNKNOWNS TO PREPARE', gaps.length ? `<div class="space-y-2">${gaps.map(g => `<div class="text-xs">
+    <p class="font-semibold text-slate-700">${esc(g.requirement)} <span class="text-[10px] font-bold uppercase rounded px-1.5 py-0.5 ${FIT_TIER_COLOR[g.tier] || 'bg-slate-100 text-slate-600'}">${esc(PREP_TIER_LABELS[g.tier] || g.tier)}</span></p>
+    <p class="text-slate-500">${esc(g.reason)}</p>
+    ${g.openQuestionId ? '<button class="prep-open-fit-tab text-[11px] font-semibold text-blue-600 hover:underline">Answer the open question in the Fit tab</button>' : ''}
+  </div>`).join('')}</div>` : '<p class="text-sm text-slate-400">No gaps or unknowns identified.</p>');
+}
+
+function renderPrepQuestionsToAsk(prep) {
+  const questions = prep.questionsToAsk || [];
+  return interviewCard('QUESTIONS TO ASK', questions.length
+    ? `<ul class="space-y-1.5 text-xs text-slate-700 list-disc list-inside">${questions.map(q => `<li>${esc(q)}</li>`).join('')}</ul>`
+    : '<p class="text-sm text-slate-400">No questions yet.</p>');
+}
+
 function renderInterviewTab(job) {
-  const interviewEvents = (job.activity || []).filter(e => e.type === 'interview_scheduled');
-  const inInterviewStage = ['recruiter_screen', 'interview', 'final_round'].includes(job.stage);
-  if (!interviewEvents.length && !inInterviewStage) {
-    return `<div class="bg-white rounded-xl border border-slate-200 shadow-sm p-6 text-sm text-slate-400">No interview activity recorded yet.</div>`;
-  }
-  return `<div class="bg-white rounded-xl border border-slate-200 shadow-sm p-4 space-y-3">
-    ${inInterviewStage ? `<p class="text-xs font-semibold text-amber-700 bg-amber-50 rounded px-3 py-2 inline-block">Currently in ${esc(job.stageLabel || job.stage)}</p>` : ''}
-    ${interviewEvents.length ? `<div>
-      <p class="text-[10px] font-bold uppercase tracking-wide text-slate-400 mb-2">Interview Events</p>
-      ${interviewEvents.slice().reverse().map(e => `<div class="border-b border-slate-100 last:border-0 py-2">
-        <p class="text-xs font-semibold text-slate-700">${esc(e.label || 'Interview scheduled')}</p>
-        <p class="text-[11px] text-slate-400">${fmtDateTime(e.at)}${e.note ? ' · ' + esc(e.note) : ''}</p>
-      </div>`).join('')}
-    </div>` : ''}
+  const prep = job.interviewPrep;
+  return `<div class="grid grid-cols-1 xl:grid-cols-[minmax(0,1fr)_340px] gap-4">
+    <div class="space-y-4">
+      ${renderInterviewRoundsCard(job)}
+      ${prep ? renderLikelyQuestions(prep) : ''}
+      ${prep ? renderPrepEvidence(prep) : ''}
+      ${prep ? renderPrepGaps(prep) : ''}
+    </div>
+    <div class="space-y-4">
+      ${prep ? renderPrepBriefing(prep) : ''}
+      ${prep ? renderPrepChecklist(prep) : ''}
+      ${prep ? renderPrepQuestionsToAsk(prep) : ''}
+    </div>
   </div>`;
 }
 
@@ -2429,6 +2618,42 @@ function bindOppTabContentActions(root) {
   root.querySelectorAll('.candidate-question').forEach(panel => {
     panel.querySelector('.question-answer-btn')?.addEventListener('click', () => submitQuestionAnswer(panel));
   });
+  root.querySelectorAll('.interview-round-form').forEach(form => {
+    form.querySelector('.round-save-btn')?.addEventListener('click', () => submitInterviewRound(form, currentJobDetailId));
+  });
+  root.querySelectorAll('.prep-open-fit-tab').forEach(btn => {
+    btn.addEventListener('click', () => showJobDetail(currentJobDetailId, { push: false, tab: 'fit' }));
+  });
+}
+
+async function submitInterviewRound(form, id) {
+  const btn = form.querySelector('.round-save-btn');
+  const errorEl = form.querySelector('.round-save-error');
+  const roundId = form.dataset.roundId;
+  const payload = buildRoundPayload({
+    roundType: form.querySelector('.round-type')?.value,
+    status: form.querySelector('.round-status')?.value,
+    scheduledAt: fromDatetimeLocalValue(form.querySelector('.round-scheduled')?.value),
+    format: form.querySelector('.round-format')?.value,
+    location: form.querySelector('.round-location')?.value,
+    contactIds: [...form.querySelectorAll('.round-contact:checked')].map(el => el.value),
+    notes: form.querySelector('.round-notes')?.value,
+    outcome: form.querySelector('.round-outcome')?.value,
+  });
+  const label = btn.textContent;
+  btn.disabled = true;
+  btn.textContent = 'Saving...';
+  errorEl?.classList.add('hidden');
+  try {
+    if (roundId) await updateInterviewRound(id, roundId, payload);
+    else await createInterviewRound(id, payload);
+    invalidateWorkspaceCaches();
+    showJobDetail(id, { push: false, tab: 'interview' });
+  } catch (e) {
+    if (errorEl) { errorEl.textContent = e.message; errorEl.classList.remove('hidden'); }
+    btn.disabled = false;
+    btn.textContent = label;
+  }
 }
 
 async function submitOppQuickDecision(root, id, decision) {
