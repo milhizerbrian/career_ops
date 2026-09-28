@@ -399,7 +399,7 @@ function applyProfileToHeader() {
 function computeKPIs(jobs) {
   const activeJobs   = visibleDashboardJobs(jobs);
   const total        = activeJobs.length;
-  const interviews   = activeJobs.filter(j => INTERVIEW_STATUSES.has(j.status || '')).length;
+  const interviews   = activeJobs.filter(isCurrentInterviewLoop).length;
   const scored       = activeJobs.map(atsPercent).filter(pct => pct != null);
   const avgAts       = scored.length
     ? Math.round(scored.reduce((sum, pct) => sum + pct, 0) / scored.length) : 0;
@@ -1550,9 +1550,16 @@ function buildIntDetailPanel(job) {
 }
 
 // ─── Interviews ───────────────────────────────────────────────────────────────
+// Interview loops shown as current: interview status AND the shared daily
+// gate (_workflow.actionable: activity on/after the Sept 1 display cutoff).
+// Older loops stay stored and in Outcome Intelligence.
+function isCurrentInterviewLoop(job) {
+  return INTERVIEW_STATUSES.has(job.status || '') && job._workflow?.actionable !== false;
+}
+
 function setupInterviews() {
   // Derive the stages present in interview-stage jobs
-  const intJobs    = allJobs.filter(j => INTERVIEW_STATUSES.has(j.status||''));
+  const intJobs    = allJobs.filter(isCurrentInterviewLoop);
   const intStatuses = [...new Set(intJobs.map(j => j.status).filter(Boolean))].sort();
   const intSel = document.getElementById('int-status-filter');
   intStatuses.forEach(s => {
@@ -1573,7 +1580,7 @@ function renderInterviews() {
   const statusF  = document.getElementById('int-status-filter').value;
   const sortVal  = document.getElementById('int-sort').value;
 
-  let list = allJobs.filter(j => INTERVIEW_STATUSES.has(j.status||''));
+  let list = allJobs.filter(isCurrentInterviewLoop);
 
   if (q)       list = list.filter(j => ((j.company||'') + ' ' + (j.title||'')).toLowerCase().includes(q));
   if (statusF) list = list.filter(j => j.status === statusF);
@@ -1596,7 +1603,7 @@ function renderInterviews() {
     }
   });
 
-  const total = allJobs.filter(j => INTERVIEW_STATUSES.has(j.status||'')).length;
+  const total = allJobs.filter(isCurrentInterviewLoop).length;
   document.getElementById('int-count-label').textContent =
     list.length === total
       ? `${total} active interview loop${total !== 1 ? 's' : ''}`

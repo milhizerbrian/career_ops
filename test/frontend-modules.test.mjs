@@ -109,6 +109,13 @@ describe('frontend ES modules', () => {
     }
   });
 
+  it('shows only current interview loops on the Interviews page and dashboard count', () => {
+    const dashboard = read('public/js/dashboard.js');
+    assert.match(dashboard, /function isCurrentInterviewLoop\(job\) \{\s+return INTERVIEW_STATUSES\.has\(job\.status \|\| ''\) && job\._workflow\?\.actionable !== false;/);
+    assert.match(dashboard, /let list = allJobs\.filter\(isCurrentInterviewLoop\)/);
+    assert.match(dashboard, /const interviews   = activeJobs\.filter\(isCurrentInterviewLoop\)/);
+  });
+
   it('exposes sort handler for existing table header onclick attributes', () => {
     const html = read('public/index.html');
     const dashboard = read('public/js/dashboard.js');

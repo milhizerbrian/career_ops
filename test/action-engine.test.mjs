@@ -363,3 +363,13 @@ describe('shared 65% daily-action fit rule', async () => {
   });
 });
 
+describe('Home pipeline snapshot interview cutoff', () => {
+  it('counts only interview loops with activity on/after Sept 1', () => {
+    const oldLoop = opp({ id: 'old-loop', stage: 'interview', status: 'technical_screen', date_updated: '2026-05-28T00:00:00.000Z', discoveredDate: '2026-05-01T00:00:00.000Z' });
+    const newLoop = opp({ id: 'new-loop', stage: 'recruiter_screen', status: 'recruiter_screen', date_updated: '2026-09-20T00:00:00.000Z' });
+    const snap = buildHomeSummary([oldLoop, newLoop], []).pipelineSnapshot;
+    assert.equal(snap.interviews, 0);
+    assert.equal(snap.recruiterScreens, 1);
+  });
+});
+
