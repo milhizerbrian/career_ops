@@ -225,7 +225,7 @@ describe('Outcome Intelligence API (Phase 10)', () => {
 });
 
 describe('Sept 1 view cutoff', () => {
-  it('hides jobs with no activity since Sept 1 from list views but keeps lookups and Outcome Intelligence complete', async () => {
+  it('hides jobs with no activity since Sept 1 from list views and analytics but keeps lookups', async () => {
     fs.writeFileSync(process.env.CAREER_OPS_TRACKER_PATH, JSON.stringify({
       'old-job': { company: 'Old Co', title: 'CSM', status: 'applied', stage: 'applied', date_found: '2026-06-01', date_updated: '2026-06-02' },
       'new-job': { company: 'New Co', title: 'CSM', status: 'lead', stage: 'discovered', date_found: '2026-09-10', date_updated: '2026-09-10', score: 4 },
@@ -244,8 +244,8 @@ describe('Sept 1 view cutoff', () => {
     assert.equal(workspace.res.status, 200);
 
     const outcomes = await request('/api/analytics/outcomes');
-    assert.equal(outcomes.body.funnel.discovered, 2);
-    assert.equal(outcomes.body.funnel.applied, 1);
+    assert.equal(outcomes.body.funnel.discovered, 1, 'Outcome Intelligence uses the same Sept 1 view');
+    assert.equal(outcomes.body.funnel.applied, 0);
 
     const home = await request('/api/home');
     assert.equal(home.body.pipelineSnapshot.applied, 0);

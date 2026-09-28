@@ -258,7 +258,8 @@ app.get('/api/analytics/summary', (req, res) => {
 // model over the same cached dashboard jobs (lib/outcome-intelligence.mjs).
 app.get('/api/analytics/outcomes', (req, res) => {
   try {
-    res.json(getCachedValue('analytics:outcomes', () => buildOutcomeIntelligence(getAllCachedJobs())));
+    // Same Sept 1 view cutoff as every other list view (getCachedDashboard().jobs).
+    res.json(getCachedValue('analytics:outcomes', () => buildOutcomeIntelligence(getCachedDashboard().jobs)));
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
