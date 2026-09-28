@@ -1,11 +1,9 @@
 #!/usr/bin/env node
 import fs from 'fs';
 import path from 'path';
-import { fileURLToPath } from 'url';
+import { bragDocPath } from '../lib/data.mjs';
 
-const APP_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-
-const DEFAULT_BRAG = path.resolve(APP_ROOT, 'data', 'master-brag-document.md');
+const DEFAULT_BRAG = bragDocPath();
 
 function argValue(name, fallback = '') {
   const idx = process.argv.indexOf(name);
