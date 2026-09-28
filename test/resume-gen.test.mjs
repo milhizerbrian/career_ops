@@ -5,6 +5,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { resolveTemplatePath } from '../lib/docx-utils.mjs';
 import {
+  auditJdCoverage,
   buildEvidenceMap,
   buildGapQuestionCandidates,
   buildCandidateTruthContext,
@@ -32,6 +33,7 @@ import {
   extendSummaryWithEvidence,
   dedupeMetricsLine,
   ensureLocalModelContext,
+  enrichEvidenceMapWithVault,
   rescueQualityUntilStable,
   sanitizeResumeLanguage,
   selectBestJobDescription,
@@ -498,6 +500,172 @@ describe('generic resume evidence review', () => {
     const after = { JOB_1_BULLET_1: '' };
 
     assert.deepEqual(compareSupportedRequirementCoverage(before, after, planning), ['value realization']);
+  });
+});
+
+describe('extractJobRequirements section weighting', () => {
+  it('ranks a requirement named in the Requirements section above one only in Nice to Have', () => {
+    const jd = [
+      'Requirements:',
+      'Experience with CRM tooling and keeping customer records current is required.',
+      '',
+      'Nice to have:',
+      'Familiarity with BOM review is a plus.',
+    ].join('\n');
+
+    const requirements = extractJobRequirements(jd, '');
+    const crmIndex = requirements.findIndex(item => item.requirement === 'CRM opportunity hygiene');
+    const bomIndex = requirements.findIndex(item => item.requirement === 'BOM review');
+
+    assert.ok(crmIndex >= 0, 'CRM opportunity hygiene should be detected');
+    assert.ok(bomIndex >= 0, 'BOM review should be detected');
+    assert.ok(requirements[crmIndex].priority > requirements[bomIndex].priority);
+  });
+
+  it('preserves existing behavior for JD text with no section headers', () => {
+    const requirements = extractJobRequirements(
+      'Manage and develop a team. Coach team members. Drive playbooks, operational consistency, GRR, NRR, lifecycle programs, and 1-to-many automation.',
+      ''
+    );
+    assert.ok(requirements.some(item => item.requirement === 'people management'));
+    assert.ok(requirements.some(item => item.requirement === 'team coaching and development'));
+    assert.ok(requirements.some(item => item.requirement === 'customer success metrics management'));
+  });
+});
+
+describe('verified-vault evidence enrichment', () => {
+  it('tags a requirement backed by 2+ verified facts as strong_match with traceable fact ids', () => {
+    const evidenceMap = [{ requirement: 'onboarding project management', status: 'partial', evidenceTerms: [] }];
+    const candidateFacts = [
+      { id: 'achievement-100', category: 'achievement', verified: true, allowed_in_resume: true, fact: 'Improved onboarding consistency across 87 client relationships.' },
+      { id: 'achievement-101', category: 'achievement', verified: true, allowed_in_resume: true, fact: 'Reduced onboarding time by 30% through implementation redesign.' },
+    ];
+    const enriched = enrichEvidenceMapWithVault(evidenceMap, candidateFacts);
+
+    assert.equal(enriched[0].verifiedTier, 'strong_match');
+    assert.deepEqual(new Set(enriched[0].verifiedEvidenceIds), new Set(['achievement-100', 'achievement-101']));
+    assert.equal(enriched[0].status, 'partial');
+  });
+
+  it('never upgrades a requirement to a stronger tier than the vault actually supports', () => {
+    const evidenceMap = [{ requirement: 'AI governance', status: 'gap', evidenceTerms: [] }];
+    const candidateFacts = [
+      { id: 'skill-050', category: 'skill', verified: true, allowed_in_resume: true, fact: 'Enterprise SIEM and IAM platform administration.' },
+    ];
+    const enriched = enrichEvidenceMapWithVault(evidenceMap, candidateFacts);
+
+    // 'AI governance' isn't a closed-list requirement (unlike certifications),
+    // so zero verified hits classifies as 'unknown' (not confirmed absent),
+    // not 'gap' — classifyRequirement's own documented distinction.
+    assert.equal(enriched[0].verifiedTier, 'unknown');
+    assert.deepEqual(enriched[0].verifiedEvidenceIds, []);
+  });
+
+  it('falls back to the unenriched evidence map when no candidate facts are available', () => {
+    const evidenceMap = [{ requirement: 'onboarding project management', status: 'partial', evidenceTerms: [] }];
+    const enriched = enrichEvidenceMapWithVault(evidenceMap, []);
+    assert.deepEqual(enriched, evidenceMap);
+  });
+});
+
+describe('generic resume evidence review extra matching', () => {
+  it('does not treat a short alias as a hit when it only appears inside an unrelated word', () => {
+    const requirements = [{ requirement: 'SME positioning' }];
+    const evidenceMap = buildEvidenceMap(
+      requirements,
+      'Helped customers who felt the onboarding process smelled off get back on track quickly.'
+    );
+    assert.equal(evidenceMap.find(item => item.requirement === 'SME positioning').status, 'gap');
+  });
+
+  it('still matches a short alias when it appears as its own word', () => {
+    const requirements = [{ requirement: 'SME positioning' }];
+    const evidenceMap = buildEvidenceMap(
+      requirements,
+      'Positioned as the SME for enterprise identity architecture during executive reviews.'
+    );
+    assert.equal(evidenceMap.find(item => item.requirement === 'SME positioning').status, 'supported');
+  });
+});
+
+describe('page-fit bullet floor', () => {
+  it('never drops a role to zero bullets while another role still has a droppable bullet', () => {
+    const planningContext = { roleMode: 'customer-success', requirements: [] };
+    const replacements = {
+      JOB_1_BULLET_1: 'Managed a $23M enterprise portfolio across 30 accounts with executive stakeholder alignment.',
+      JOB_1_BULLET_2: 'Drove 98% retention through structured account health reviews and CISO business reviews.',
+      JOB_1_BULLET_3: 'Reduced churn by identifying at-risk accounts and coordinating cross-functional recovery plans.',
+      JOB_5_BULLET_1: 'Supported day-to-day account activity without a specific metric.',
+    };
+
+    let current = { ...replacements };
+    for (let i = 0; i < 2; i += 1) {
+      const drop = lowestPrioritySelectedBullet(current, planningContext);
+      assert.ok(drop, `expected a droppable bullet on iteration ${i}`);
+      assert.notEqual(drop.field, 'JOB_5_BULLET_1', `role 5's only bullet should not be dropped while role 1 still has more than one (iteration ${i})`);
+      current = { ...current, [drop.field]: '' };
+    }
+  });
+});
+
+describe('summary sentence repetition', () => {
+  it('flags consecutive PROFESSIONAL_SUMMARY sentences that open with the same words', () => {
+    const planningContext = { roleMode: 'customer-success', requirements: [] };
+    const issues = critiqueResumeDraft({
+      PROFESSIONAL_SUMMARY: 'Supported enterprise customers across endpoint and network security deployments, helping resolve escalations and maintain platform stability. Supported enterprise customers adopting identity and access management (IAM) platforms, helping teams integrate authentication workflows and stabilize production deployments.',
+    }, planningContext);
+
+    assert.ok(issues.some(issue => issue.code === 'repeated-summary-opener' && issue.field === 'PROFESSIONAL_SUMMARY'));
+  });
+
+  it('does not flag a summary whose sentences open differently and cover different ground', () => {
+    const planningContext = { roleMode: 'customer-success', requirements: [] };
+    const issues = critiqueResumeDraft({
+      PROFESSIONAL_SUMMARY: 'Led enterprise customer success across a $23M ARR portfolio. Reduced onboarding time by 30% through implementation redesign.',
+    }, planningContext);
+
+    assert.ok(!issues.some(issue => issue.code === 'repeated-summary-opener'));
+    assert.ok(!issues.some(issue => issue.code === 'near-duplicate-summary-sentence'));
+  });
+
+  it('flags near-duplicate summary sentences even when their openers differ', () => {
+    const planningContext = { roleMode: 'customer-success', requirements: [] };
+    const issues = critiqueResumeDraft({
+      PROFESSIONAL_SUMMARY: 'Reduced onboarding time across enterprise SIEM customers through process redesign and stakeholder alignment. Cut onboarding time across enterprise SIEM customers through process redesign and stakeholder alignment.',
+    }, planningContext);
+
+    assert.ok(issues.some(issue => issue.code === 'near-duplicate-summary-sentence' && issue.field === 'PROFESSIONAL_SUMMARY'));
+  });
+});
+
+describe('JD coverage audit', () => {
+  it('separates covered, missing-despite-evidence, unsupported-gap, and buried requirements', () => {
+    const requirements = [
+      { requirement: 'onboarding project management', source: 'jd', priority: 9 },
+      { requirement: 'people management', source: 'jd', priority: 8 },
+      { requirement: 'renewal and retention ownership', source: 'jd', priority: 7 },
+      { requirement: 'CRM opportunity hygiene', source: 'jd', priority: 1 },
+    ];
+    const evidenceMap = [
+      { requirement: 'onboarding project management', status: 'supported' },
+      { requirement: 'people management', status: 'supported' },
+      { requirement: 'renewal and retention ownership', status: 'supported' },
+      { requirement: 'CRM opportunity hygiene', status: 'gap' },
+    ];
+    const replacements = {
+      KEY_ACHIEVEMENT_1: 'Improved onboarding consistency across 87 client relationships.',
+      JOB_1_BULLET_1: 'Reduced churn by identifying at-risk accounts and coordinating recovery.',
+      JOB_5_BULLET_1: 'Owned renewal execution and expansion for a mid-market book of business.',
+    };
+
+    const audit = auditJdCoverage({ requirements, evidenceMap, replacements });
+
+    assert.ok(audit.covered.includes('onboarding project management'));
+    assert.ok(!audit.buried.includes('onboarding project management'));
+    assert.ok(audit.missingWithEvidence.includes('people management'));
+    assert.ok(audit.covered.includes('renewal and retention ownership'));
+    assert.ok(audit.buried.includes('renewal and retention ownership'));
+    assert.ok(audit.unsupportedGaps.includes('CRM opportunity hygiene'));
   });
 });
 
