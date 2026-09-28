@@ -622,6 +622,23 @@ describe('page-fit bullet floor', () => {
     assert.ok(drop, 'expected a bullet to be returned even with both roles at the floor');
     assert.equal(drop.field, 'JOB_5_BULLET_1', 'the lower-scoring of the two remaining bullets should be picked');
   });
+
+  it('protects the only bullet covering a covered top-priority requirement over a higher-scoring but redundant one', () => {
+    const planningContext = {
+      roleMode: 'customer-success',
+      requirements: [{ requirement: 'customer escalation management', source: 'jd', priority: 9 }],
+      evidenceMap: [{ requirement: 'customer escalation management', status: 'supported' }],
+    };
+    const replacements = {
+      JOB_1_BULLET_1: 'Drove 98% retention and $23M portfolio growth through structured account health reviews.',
+      JOB_1_BULLET_2: 'Owned customer escalations end to end, coordinating recovery planning across support and engineering.',
+      JOB_5_BULLET_1: 'Supported day-to-day account activity without a specific metric.',
+    };
+
+    const drop = lowestPrioritySelectedBullet(replacements, planningContext);
+
+    assert.notEqual(drop.field, 'JOB_1_BULLET_2', 'should not drop the sole bullet covering the covered top-priority requirement');
+  });
 });
 
 describe('summary sentence repetition', () => {
