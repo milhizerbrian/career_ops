@@ -33,7 +33,7 @@ fs.writeFileSync(process.env.CAREER_OPS_GMAIL_JOBS_PATH, JSON.stringify([
     role: 'Senior Customer Success Manager',
     status: 'recruiter_screen',
     last_email_subject: 'Acme next steps',
-    last_email_date: '2026-05-08T12:00:00.000Z',
+    last_email_date: '2026-09-08T12:00:00.000Z',
     last_email_snippet: 'Thanks for applying',
     gmailMatch: { ambiguous: true, confidence: 0.5 },
     matchCandidates: [{ id: 'job1', company: 'Acme Security', title: 'Senior Customer Success Manager' }],
@@ -90,6 +90,18 @@ describe('server API routes', () => {
     const relisted = await request('/api/gmail-jobs?ambiguous=1');
     assert.equal(relisted.body.length, 1);
     assert.equal(relisted.body[0].thread_id, 'thread-attach');
+  });
+
+  it('hides Gmail threads dated before the Sept 1 display cutoff', async () => {
+    const gmailPath = process.env.CAREER_OPS_GMAIL_JOBS_PATH;
+    const original = fs.readFileSync(gmailPath, 'utf8');
+    fs.writeFileSync(gmailPath, JSON.stringify([
+      { thread_id: 'old', company: 'Old Co', last_email_date: '2026-06-01T00:00:00.000Z' },
+      { thread_id: 'new', company: 'New Co', last_email_date: '2026-09-02T00:00:00.000Z' },
+    ]));
+    const listed = await request('/api/gmail-jobs');
+    fs.writeFileSync(gmailPath, original);
+    assert.deepEqual(listed.body.map(j => j.thread_id), ['new']);
   });
 
   it('attaches ambiguous Gmail matches and advances status on approval', async () => {

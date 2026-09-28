@@ -223,3 +223,31 @@ describe('Outcome Intelligence API (Phase 10)', () => {
     assert.ok(body.assumptions.length > 0);
   });
 });
+
+describe('Sept 1 view cutoff', () => {
+  it('hides jobs with no activity since Sept 1 from list views but keeps lookups and Outcome Intelligence complete', async () => {
+    fs.writeFileSync(process.env.CAREER_OPS_TRACKER_PATH, JSON.stringify({
+      'old-job': { company: 'Old Co', title: 'CSM', status: 'applied', stage: 'applied', date_found: '2026-06-01', date_updated: '2026-06-02' },
+      'new-job': { company: 'New Co', title: 'CSM', status: 'lead', stage: 'discovered', date_found: '2026-09-10', date_updated: '2026-09-10', score: 4 },
+    }, null, 2));
+    // server.mjs watches data files; force a fresh build through a cache-invalidating write.
+    await request('/api/opportunities/new-job', { method: 'PATCH', body: JSON.stringify({ priority: 'high' }) });
+
+    const dashboard = await request('/api/dashboard');
+    assert.deepEqual(dashboard.body.jobs.map(j => j.id), ['new-job']);
+    const list = await request('/api/jobs');
+    assert.deepEqual(list.body.map(j => j.id), ['new-job']);
+
+    const detail = await request('/api/jobs/old-job');
+    assert.equal(detail.res.status, 200);
+    const workspace = await request('/api/opportunities/old-job/workspace');
+    assert.equal(workspace.res.status, 200);
+
+    const outcomes = await request('/api/analytics/outcomes');
+    assert.equal(outcomes.body.funnel.discovered, 2);
+    assert.equal(outcomes.body.funnel.applied, 1);
+
+    const home = await request('/api/home');
+    assert.equal(home.body.pipelineSnapshot.applied, 0);
+  });
+});

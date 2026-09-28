@@ -9,7 +9,7 @@ import { fileURLToPath } from 'url';
 import path from 'path';
 import fs from 'fs';
 
-import { getCachedDashboard, getCachedValue, getCachedValueAsync, invalidateCache } from './lib/cache.mjs';
+import { getAllCachedJobs, getCachedDashboard, getCachedValue, getCachedValueAsync, invalidateCache } from './lib/cache.mjs';
 import { loadBragDoc, loadJobById, loadPipeline, dismissPipelineItem } from './lib/data.mjs';
 import { updateTracker, updateJobWithPrevious } from './lib/tracker-store.mjs';
 import { generateResume, analyzeGaps, generateGapQuestions, applyGapAnswersToBragDoc, assessStoredJobDescription } from './lib/resume-gen.mjs';
@@ -20,7 +20,7 @@ import { buildGeneratedDocEntry } from './lib/generated-docs.mjs';
 import { normalizeStatus } from './lib/status-utils.mjs';
 import { analyzeBragDocQuality } from './lib/brag-quality.mjs';
 import { beginSharedResumeResources, canStartResumeRun, resumeMaxConcurrent } from './lib/resume-run-coordinator.mjs';
-import { appendWorkflowEvent, applyManualWorkflowEvent } from './lib/job-workflow.mjs';
+import { ACTIVITY_DISPLAY_CUTOFF, appendWorkflowEvent, applyManualWorkflowEvent, isVisibleInViews } from './lib/job-workflow.mjs';
 import { upsertJobContact } from './lib/job-contacts.mjs';
 import { upsertInterviewRound } from './lib/interview-rounds.mjs';
 import { buildOutcomeIntelligence } from './lib/outcome-intelligence.mjs';
@@ -80,7 +80,7 @@ function computedJobReadModel(job) {
 }
 
 function cachedJobById(jobId) {
-  const { jobs } = getCachedDashboard();
+  const jobs = getAllCachedJobs();
   const job = jobs.find(item => item.id === jobId);
   if (!job) throw new Error(`Job not found in tracker: ${jobId}`);
   return job;
@@ -176,7 +176,7 @@ app.get('/api/jobs', (req, res) => {
 
 app.get('/api/jobs/:id', (req, res) => {
   try {
-    const { jobs } = getCachedDashboard();
+    const jobs = getAllCachedJobs();
     const job = jobs.find(item => item.id === req.params.id);
     if (!job) return res.status(404).json({ error: `Job not found in tracker: ${req.params.id}` });
     res.json(buildJobReadModel(job, { bragDoc: loadBragDoc() }));
@@ -258,7 +258,7 @@ app.get('/api/analytics/summary', (req, res) => {
 // model over the same cached dashboard jobs (lib/outcome-intelligence.mjs).
 app.get('/api/analytics/outcomes', (req, res) => {
   try {
-    res.json(getCachedValue('analytics:outcomes', () => buildOutcomeIntelligence(getCachedDashboard().jobs)));
+    res.json(getCachedValue('analytics:outcomes', () => buildOutcomeIntelligence(getAllCachedJobs())));
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -277,7 +277,7 @@ app.get('/api/settings/health', async (req, res) => {
 // open questions on every (cache-invalidated) build — see lib/action-engine.mjs
 // for why actions are computed, not stored.
 function buildHomePayload() {
-  const opportunities = listOpportunities();
+  const opportunities = listOpportunities().filter(opp => isVisibleInViews(opp));
   const openQuestions = getOpenQuestions();
   const actions = buildActions(opportunities, { openQuestions });
   return { ...buildHomeSummary(opportunities, actions), generatedAt: new Date().toISOString() };
@@ -680,7 +680,8 @@ app.post('/api/jobs/:id/contacts/outreach-draft', express.json(), async (req, re
 app.get('/api/gmail-jobs', async (req, res) => {
   try {
     const { loadGmailJobs, listAmbiguousGmailJobs } = await import('./gmail-sync.mjs');
-    const jobs = loadGmailJobs();
+    // Display cutoff: only Gmail threads with mail on/after Sept 1.
+    const jobs = loadGmailJobs().filter(job => !job.last_email_date || new Date(job.last_email_date).toISOString() >= ACTIVITY_DISPLAY_CUTOFF);
     res.json(req.query.ambiguous === '1' ? listAmbiguousGmailJobs(jobs) : jobs);
   } catch (err) {
     res.status(500).json({ error: err.message });
