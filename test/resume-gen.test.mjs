@@ -744,6 +744,17 @@ describe('JD coverage audit', () => {
     assert.ok(!audit.covered.includes('CRM opportunity hygiene'));
     assert.ok(!audit.missingWithEvidence.includes('CRM opportunity hygiene'));
   });
+
+  it('flags a requirement with strong verified evidence that is completely absent from the resume as omittedWithStrongEvidence', () => {
+    const requirements = [{ requirement: 'customer escalation management', source: 'jd', priority: 9 }];
+    const evidenceMap = [{ requirement: 'customer escalation management', status: 'supported', verifiedTier: 'strong_match', verifiedEvidenceIds: ['achievement-1', 'achievement-2'] }];
+    const replacements = { PROFESSIONAL_SUMMARY: 'Drove adoption and renewal across an enterprise portfolio.' };
+
+    const audit = auditJdCoverage({ requirements, evidenceMap, replacements });
+
+    assert.ok(audit.omittedWithStrongEvidence.includes('customer escalation management'));
+    assert.ok(audit.missingWithEvidence.includes('customer escalation management'), 'still included in the broader bucket too');
+  });
 });
 
 describe('generic JD source selection', () => {
