@@ -639,6 +639,20 @@ describe('page-fit bullet floor', () => {
 
     assert.notEqual(drop.field, 'JOB_1_BULLET_2', 'should not drop the sole bullet covering the covered top-priority requirement');
   });
+
+  it('prefers dropping an experience bullet that near-duplicates an existing Key Achievement over a distinct one', () => {
+    const planningContext = { roleMode: 'customer-success', requirements: [] };
+    const replacements = {
+      KEY_ACHIEVEMENT_1: 'Reduced onboarding time by 30% through process redesign, displacing a competing solution and driving expansion.',
+      JOB_1_BULLET_1: 'Cut onboarding time by 30% through process redesign, displacing a competing solution and driving expansion.',
+      JOB_1_BULLET_2: 'Coordinated support and engineering to resolve customer escalations end to end.',
+      JOB_5_BULLET_1: 'Supported day-to-day account activity without a specific metric.',
+    };
+
+    const drop = lowestPrioritySelectedBullet(replacements, planningContext);
+
+    assert.equal(drop.field, 'JOB_1_BULLET_1', 'the redundant bullet should be dropped ahead of the distinct one');
+  });
 });
 
 describe('summary sentence repetition', () => {
