@@ -1,0 +1,864 @@
+[
+  {
+    "id": "achievement-001",
+    "fact": "Portfolio: $23M ARR",
+    "category": "metric",
+    "employer": "ExtraHop",
+    "source": "master-brag-document.md",
+    "verified": true,
+    "allowed_in_resume": true
+  },
+  {
+    "id": "achievement-002",
+    "fact": "Retention: 98% Gross Revenue Retention",
+    "category": "metric",
+    "employer": "ExtraHop",
+    "source": "master-brag-document.md",
+    "verified": true,
+    "allowed_in_resume": true
+  },
+  {
+    "id": "achievement-003",
+    "fact": "Expansion: 120% Net Revenue Retention",
+    "category": "metric",
+    "employer": "ExtraHop",
+    "source": "master-brag-document.md",
+    "verified": true,
+    "allowed_in_resume": true
+  },
+  {
+    "id": "achievement-004",
+    "fact": "Largest deal: $13M enterprise renewal + 122% expansion",
+    "category": "metric",
+    "employer": "ExtraHop",
+    "source": "master-brag-document.md",
+    "verified": true,
+    "allowed_in_resume": true
+  },
+  {
+    "id": "achievement-005",
+    "fact": "Efficiency: 20% reduction in time-to-value",
+    "category": "metric",
+    "employer": "ExtraHop",
+    "source": "master-brag-document.md",
+    "verified": true,
+    "allowed_in_resume": true
+  },
+  {
+    "id": "achievement-006",
+    "fact": "Own a $23M ARR portfolio of enterprise cybersecurity customers across healthcare, financial services, and retail, supporting NDR, NPM, and visibility across on-prem, hybrid, and cloud environments",
+    "category": "achievement",
+    "employer": "ExtraHop",
+    "source": "master-brag-document.md",
+    "verified": true,
+    "allowed_in_resume": true
+  },
+  {
+    "id": "achievement-007",
+    "fact": "Work closely with CISOs and senior security leaders to keep deployments moving, strengthen adoption, and make sure customers see clear value well before renewal conversations begin",
+    "category": "achievement",
+    "employer": "ExtraHop",
+    "source": "master-brag-document.md",
+    "verified": true,
+    "allowed_in_resume": true
+  },
+  {
+    "id": "achievement-008",
+    "fact": "Maintained 98% Gross Revenue Retention across strategic enterprise accounts",
+    "category": "achievement",
+    "employer": "ExtraHop",
+    "source": "master-brag-document.md",
+    "verified": true,
+    "allowed_in_resume": true
+  },
+  {
+    "id": "achievement-009",
+    "fact": "Drove 120% Net Revenue Retention through expansion tied to security maturity and use-case adoption",
+    "category": "achievement",
+    "employer": "ExtraHop",
+    "source": "master-brag-document.md",
+    "verified": true,
+    "allowed_in_resume": true
+  },
+  {
+    "id": "achievement-010",
+    "fact": "Led a $13M enterprise renewal while expanding account value by 122%",
+    "category": "achievement",
+    "employer": "ExtraHop",
+    "source": "master-brag-document.md",
+    "verified": true,
+    "allowed_in_resume": true
+  },
+  {
+    "id": "achievement-011",
+    "fact": "Reduced time-to-value by 20% by optimizing onboarding and accelerating activation of high-impact security use cases",
+    "category": "achievement",
+    "employer": "ExtraHop",
+    "source": "master-brag-document.md",
+    "verified": true,
+    "allowed_in_resume": true
+  },
+  {
+    "id": "achievement-012",
+    "fact": "Established executive QBR cadence to proactively surface renewal risk and expansion opportunities",
+    "category": "achievement",
+    "employer": "ExtraHop",
+    "source": "master-brag-document.md",
+    "verified": true,
+    "allowed_in_resume": true
+  },
+  {
+    "id": "achievement-013",
+    "fact": "Partnered with Sales leadership to improve forecast accuracy and mitigate churn well ahead of renewal cycles",
+    "category": "achievement",
+    "employer": "ExtraHop",
+    "source": "master-brag-document.md",
+    "verified": true,
+    "allowed_in_resume": true
+  },
+  {
+    "id": "achievement-014",
+    "fact": "Worked with third-party MSSPs supporting enterprise security operations and managed-service delivery models",
+    "category": "achievement",
+    "employer": "ExtraHop",
+    "source": "master-brag-document.md",
+    "verified": true,
+    "allowed_in_resume": true
+  },
+  {
+    "id": "achievement-015",
+    "fact": "Delivered demos, proofs of concept, and proofs of value to validate platform fit, detection use cases, and operational outcomes",
+    "category": "achievement",
+    "employer": "ExtraHop",
+    "source": "master-brag-document.md",
+    "verified": true,
+    "allowed_in_resume": true
+  },
+  {
+    "id": "achievement-016",
+    "fact": "Helped customers improve investigation workflows by mapping analyst processes to detection, visibility, and response capabilities",
+    "category": "achievement",
+    "employer": "ExtraHop",
+    "source": "master-brag-document.md",
+    "verified": true,
+    "allowed_in_resume": true
+  },
+  {
+    "id": "achievement-017",
+    "fact": "Translated telemetry and usage data into CISO-ready business cases that connected investigation workflows, adoption gaps, and measurable customer outcomes to renewal and expansion conversations",
+    "category": "achievement",
+    "employer": "ExtraHop",
+    "source": "master-brag-document.md",
+    "verified": true,
+    "allowed_in_resume": true
+  },
+  {
+    "id": "achievement-018",
+    "fact": "Portfolio: $27M ARR across 6 enterprise SIEM customers",
+    "category": "metric",
+    "employer": "Securonix",
+    "source": "master-brag-document.md",
+    "verified": true,
+    "allowed_in_resume": true
+  },
+  {
+    "id": "achievement-019",
+    "fact": "Retention: 100% renewal rate",
+    "category": "metric",
+    "employer": "Securonix",
+    "source": "master-brag-document.md",
+    "verified": true,
+    "allowed_in_resume": true
+  },
+  {
+    "id": "achievement-020",
+    "fact": "Expansion: 81% ARR growth on a 3-year contract (new business unit onboarding)",
+    "category": "metric",
+    "employer": "Securonix",
+    "source": "master-brag-document.md",
+    "verified": true,
+    "allowed_in_resume": true
+  },
+  {
+    "id": "achievement-021",
+    "fact": "Efficiency: 30% reduction in onboarding time",
+    "category": "metric",
+    "employer": "Securonix",
+    "source": "master-brag-document.md",
+    "verified": true,
+    "allowed_in_resume": true
+  },
+  {
+    "id": "achievement-022",
+    "fact": "Risk recovery: 3 at-risk accounts retained",
+    "category": "metric",
+    "employer": "Securonix",
+    "source": "master-brag-document.md",
+    "verified": true,
+    "allowed_in_resume": true
+  },
+  {
+    "id": "achievement-023",
+    "fact": "Managed a $27M ARR portfolio across six enterprise SIEM customers, supporting large-scale security operations and multi-year platform deployments",
+    "category": "achievement",
+    "employer": "Securonix",
+    "source": "master-brag-document.md",
+    "verified": true,
+    "allowed_in_resume": true
+  },
+  {
+    "id": "achievement-024",
+    "fact": "Reduced onboarding time by 30%, enabling displacement of a competing solution and driving two expansions, including onboarding a new business unit that increased ARR by 81% on a 3-year contract",
+    "category": "achievement",
+    "employer": "Securonix",
+    "source": "master-brag-document.md",
+    "verified": true,
+    "allowed_in_resume": true
+  },
+  {
+    "id": "achievement-025",
+    "fact": "Put structure around customer engagement and escalation handling, making it easier to spot risk early and respond before renewals were impacted",
+    "category": "achievement",
+    "employer": "Securonix",
+    "source": "master-brag-document.md",
+    "verified": true,
+    "allowed_in_resume": true
+  },
+  {
+    "id": "achievement-026",
+    "fact": "Helped transition the organization from a technical account model to a structured customer success approach, introducing lifecycle engagement rhythms that improved customer satisfaction and retention",
+    "category": "achievement",
+    "employer": "Securonix",
+    "source": "master-brag-document.md",
+    "verified": true,
+    "allowed_in_resume": true
+  },
+  {
+    "id": "achievement-027",
+    "fact": "Achieved 100% renewal across the enterprise portfolio, retaining three at-risk customers through targeted recovery planning, stakeholder realignment, and value-focused engagement",
+    "category": "achievement",
+    "employer": "Securonix",
+    "source": "master-brag-document.md",
+    "verified": true,
+    "allowed_in_resume": true
+  },
+  {
+    "id": "achievement-028",
+    "fact": "Worked with third-party MSSPs operating SIEM environments and managed security delivery models",
+    "category": "achievement",
+    "employer": "Securonix",
+    "source": "master-brag-document.md",
+    "verified": true,
+    "allowed_in_resume": true
+  },
+  {
+    "id": "achievement-029",
+    "fact": "Delivered demos, proofs of concept, and proofs of value tied to SIEM workflows, onboarding architecture, and operational outcomes",
+    "category": "achievement",
+    "employer": "Securonix",
+    "source": "master-brag-document.md",
+    "verified": true,
+    "allowed_in_resume": true
+  },
+  {
+    "id": "achievement-030",
+    "fact": "Helped customers improve investigation workflows by aligning log ingestion, UEBA detections, and SOC operating models",
+    "category": "achievement",
+    "employer": "Securonix",
+    "source": "master-brag-document.md",
+    "verified": true,
+    "allowed_in_resume": true
+  },
+  {
+    "id": "achievement-031",
+    "fact": "Portfolio: $55M ARR",
+    "category": "metric",
+    "employer": "McAfee",
+    "source": "master-brag-document.md",
+    "verified": true,
+    "allowed_in_resume": true
+  },
+  {
+    "id": "achievement-032",
+    "fact": "Expansion: 14 opportunities identified across 5 accounts; 30%+ ARR growth",
+    "category": "metric",
+    "employer": "McAfee",
+    "source": "master-brag-document.md",
+    "verified": true,
+    "allowed_in_resume": true
+  },
+  {
+    "id": "achievement-033",
+    "fact": "NPS: Highest in portfolio (largest cloud security onboarding)",
+    "category": "metric",
+    "employer": "McAfee",
+    "source": "master-brag-document.md",
+    "verified": true,
+    "allowed_in_resume": true
+  },
+  {
+    "id": "achievement-034",
+    "fact": "Managed a $55M enterprise portfolio, supporting Fortune 500 customers across highly regulated industries",
+    "category": "achievement",
+    "employer": "McAfee",
+    "source": "master-brag-document.md",
+    "verified": true,
+    "allowed_in_resume": true
+  },
+  {
+    "id": "achievement-035",
+    "fact": "Identified 14 expansion opportunities across five enterprise accounts, driving 30%+ ARR growth through cross-business-unit adoption",
+    "category": "achievement",
+    "employer": "McAfee",
+    "source": "master-brag-document.md",
+    "verified": true,
+    "allowed_in_resume": true
+  },
+  {
+    "id": "achievement-036",
+    "fact": "Led onboarding of McAfee's largest cloud security customer, delivering a successful rollout and achieving the highest NPS score across the portfolio",
+    "category": "achievement",
+    "employer": "McAfee",
+    "source": "master-brag-document.md",
+    "verified": true,
+    "allowed_in_resume": true
+  },
+  {
+    "id": "achievement-037",
+    "fact": "Proactively identified technical and operational gaps, resolving issues early and strengthening long-term retention across enterprise customers",
+    "category": "achievement",
+    "employer": "McAfee",
+    "source": "master-brag-document.md",
+    "verified": true,
+    "allowed_in_resume": true
+  },
+  {
+    "id": "achievement-038",
+    "fact": "Delivered demos, proofs of concept, and proofs of value across enterprise security platform opportunities",
+    "category": "achievement",
+    "employer": "McAfee",
+    "source": "master-brag-document.md",
+    "verified": true,
+    "allowed_in_resume": true
+  },
+  {
+    "id": "achievement-039",
+    "fact": "Helped customers refine investigation workflows across EDR, IAM, DLP, and network security use cases",
+    "category": "achievement",
+    "employer": "McAfee",
+    "source": "master-brag-document.md",
+    "verified": true,
+    "allowed_in_resume": true
+  },
+  {
+    "id": "achievement-040",
+    "fact": "Portfolio: $5M-$15M ARR across 14 accounts",
+    "category": "metric",
+    "employer": "Auth0 / Okta",
+    "source": "master-brag-document.md",
+    "verified": true,
+    "allowed_in_resume": true
+  },
+  {
+    "id": "achievement-041",
+    "fact": "Retention: 99%",
+    "category": "metric",
+    "employer": "Auth0 / Okta",
+    "source": "master-brag-document.md",
+    "verified": true,
+    "allowed_in_resume": true
+  },
+  {
+    "id": "achievement-042",
+    "fact": "Net Revenue Retention: 120%",
+    "category": "metric",
+    "employer": "Auth0 / Okta",
+    "source": "master-brag-document.md",
+    "verified": true,
+    "allowed_in_resume": true
+  },
+  {
+    "id": "achievement-043",
+    "fact": "NPS improvement: 50% increase",
+    "category": "metric",
+    "employer": "Auth0 / Okta",
+    "source": "master-brag-document.md",
+    "verified": true,
+    "allowed_in_resume": true
+  },
+  {
+    "id": "achievement-044",
+    "fact": "Ecosystem: IAM, authentication, OIDC, OAuth",
+    "category": "metric",
+    "employer": "Auth0 / Okta",
+    "source": "master-brag-document.md",
+    "verified": true,
+    "allowed_in_resume": true
+  },
+  {
+    "id": "achievement-045",
+    "fact": "Supported enterprise customers adopting identity and access management (IAM) platforms, helping teams integrate authentication workflows and stabilize production deployments",
+    "category": "achievement",
+    "employer": "Auth0 / Okta",
+    "source": "master-brag-document.md",
+    "verified": true,
+    "allowed_in_resume": true
+  },
+  {
+    "id": "achievement-046",
+    "fact": "Increased NPS by 50% by rebuilding customer success playbooks and introducing more structured success planning",
+    "category": "achievement",
+    "employer": "Auth0 / Okta",
+    "source": "master-brag-document.md",
+    "verified": true,
+    "allowed_in_resume": true
+  },
+  {
+    "id": "achievement-047",
+    "fact": "Acted as the primary customer advocate across support, engineering, and product teams, helping resolve complex integration and deployment challenges",
+    "category": "achievement",
+    "employer": "Auth0 / Okta",
+    "source": "master-brag-document.md",
+    "verified": true,
+    "allowed_in_resume": true
+  },
+  {
+    "id": "achievement-048",
+    "fact": "Developed risk mitigation and success plans that helped customers stay on track with adoption and get more consistent value from the platform",
+    "category": "achievement",
+    "employer": "Auth0 / Okta",
+    "source": "master-brag-document.md",
+    "verified": true,
+    "allowed_in_resume": true
+  },
+  {
+    "id": "achievement-049",
+    "fact": "Delivered demos, proofs of concept, and proofs of value for enterprise IAM and authentication initiatives",
+    "category": "achievement",
+    "employer": "Auth0 / Okta",
+    "source": "master-brag-document.md",
+    "verified": true,
+    "allowed_in_resume": true
+  },
+  {
+    "id": "achievement-050",
+    "fact": "Helped customers improve investigation workflows tied to identity, authentication, and deployment behavior",
+    "category": "achievement",
+    "employer": "Auth0 / Okta",
+    "source": "master-brag-document.md",
+    "verified": true,
+    "allowed_in_resume": true
+  },
+  {
+    "id": "achievement-051",
+    "fact": "Client base: 87 clients",
+    "category": "metric",
+    "employer": "Total Trial Services, LLC",
+    "source": "master-brag-document.md",
+    "verified": true,
+    "allowed_in_resume": true
+  },
+  {
+    "id": "achievement-052",
+    "fact": "Team: 8 direct reports",
+    "category": "metric",
+    "employer": "Total Trial Services, LLC",
+    "source": "master-brag-document.md",
+    "verified": true,
+    "allowed_in_resume": true
+  },
+  {
+    "id": "achievement-053",
+    "fact": "Retention improvement: 22% increase",
+    "category": "metric",
+    "employer": "Total Trial Services, LLC",
+    "source": "master-brag-document.md",
+    "verified": true,
+    "allowed_in_resume": true
+  },
+  {
+    "id": "achievement-054",
+    "fact": "Led a growing customer base and support team, bringing more structure to onboarding and day-to-day engagement as the company scaled",
+    "category": "achievement",
+    "employer": "Total Trial Services, LLC",
+    "source": "master-brag-document.md",
+    "verified": true,
+    "allowed_in_resume": true
+  },
+  {
+    "id": "achievement-055",
+    "fact": "Improved onboarding consistency across 87 client relationships by guiding customer engagement and leading an 8-person team",
+    "category": "achievement",
+    "employer": "Total Trial Services, LLC",
+    "source": "master-brag-document.md",
+    "verified": true,
+    "allowed_in_resume": true
+  },
+  {
+    "id": "achievement-056",
+    "fact": "Increased client retention by 22% by introducing more consistent onboarding, satisfaction tracking, and escalation handling",
+    "category": "achievement",
+    "employer": "Total Trial Services, LLC",
+    "source": "master-brag-document.md",
+    "verified": true,
+    "allowed_in_resume": true
+  },
+  {
+    "id": "achievement-057",
+    "fact": "Helped align delivery and customer teams around clearer expectations and more consistent communication across accounts",
+    "category": "achievement",
+    "employer": "Total Trial Services, LLC",
+    "source": "master-brag-document.md",
+    "verified": true,
+    "allowed_in_resume": true
+  },
+  {
+    "id": "achievement-058",
+    "fact": "Portfolio: $18M ARR across 18 accounts",
+    "category": "metric",
+    "employer": "Proofpoint",
+    "source": "master-brag-document.md",
+    "verified": true,
+    "allowed_in_resume": true
+  },
+  {
+    "id": "achievement-059",
+    "fact": "Retention: 98%",
+    "category": "metric",
+    "employer": "Proofpoint",
+    "source": "master-brag-document.md",
+    "verified": true,
+    "allowed_in_resume": true
+  },
+  {
+    "id": "achievement-060",
+    "fact": "Expansion pipeline: $1.65M+",
+    "category": "metric",
+    "employer": "Proofpoint",
+    "source": "master-brag-document.md",
+    "verified": true,
+    "allowed_in_resume": true
+  },
+  {
+    "id": "achievement-061",
+    "fact": "Maintained 98% retention across an enterprise portfolio by driving adoption across email security and threat protection platforms",
+    "category": "achievement",
+    "employer": "Proofpoint",
+    "source": "master-brag-document.md",
+    "verified": true,
+    "allowed_in_resume": true
+  },
+  {
+    "id": "achievement-062",
+    "fact": "Resolved complex escalations by coordinating across support, product, and engineering teams, helping stabilize high-risk customer situations",
+    "category": "achievement",
+    "employer": "Proofpoint",
+    "source": "master-brag-document.md",
+    "verified": true,
+    "allowed_in_resume": true
+  },
+  {
+    "id": "achievement-063",
+    "fact": "Identified and supported $1.65M+ in expansion opportunities through ongoing health checks and customer engagement",
+    "category": "achievement",
+    "employer": "Proofpoint",
+    "source": "master-brag-document.md",
+    "verified": true,
+    "allowed_in_resume": true
+  },
+  {
+    "id": "achievement-064",
+    "fact": "Delivered demos, proofs of concept, and proofs of value across email security and advanced threat protection initiatives",
+    "category": "achievement",
+    "employer": "Proofpoint",
+    "source": "master-brag-document.md",
+    "verified": true,
+    "allowed_in_resume": true
+  },
+  {
+    "id": "achievement-065",
+    "fact": "Helped customers improve investigation workflows tied to phishing, threat detection, and exposure reduction",
+    "category": "achievement",
+    "employer": "Proofpoint",
+    "source": "master-brag-document.md",
+    "verified": true,
+    "allowed_in_resume": true
+  },
+  {
+    "id": "achievement-066",
+    "fact": "Accounts: 11 enterprise accounts",
+    "category": "metric",
+    "employer": "Trend Micro",
+    "source": "master-brag-document.md",
+    "verified": true,
+    "allowed_in_resume": true
+  },
+  {
+    "id": "achievement-067",
+    "fact": "Certification earned: CEH (Certified Ethical Hacker, December 2014)",
+    "category": "metric",
+    "employer": "Trend Micro",
+    "source": "master-brag-document.md",
+    "verified": true,
+    "allowed_in_resume": true
+  },
+  {
+    "id": "achievement-068",
+    "fact": "Supported enterprise customers across endpoint and network security deployments, helping resolve escalations and maintain platform stability",
+    "category": "achievement",
+    "employer": "Trend Micro",
+    "source": "master-brag-document.md",
+    "verified": true,
+    "allowed_in_resume": true
+  },
+  {
+    "id": "achievement-069",
+    "fact": "Introduced a more consistent customer review process that improved communication and helped streamline onboarding",
+    "category": "achievement",
+    "employer": "Trend Micro",
+    "source": "master-brag-document.md",
+    "verified": true,
+    "allowed_in_resume": true
+  },
+  {
+    "id": "achievement-070",
+    "fact": "Worked closely with customer teams during integration and rollout efforts, helping drive adoption of key platform capabilities",
+    "category": "achievement",
+    "employer": "Trend Micro",
+    "source": "master-brag-document.md",
+    "verified": true,
+    "allowed_in_resume": true
+  },
+  {
+    "id": "achievement-071",
+    "fact": "Delivered demos, proofs of concept, and proofs of value across endpoint and network security initiatives",
+    "category": "achievement",
+    "employer": "Trend Micro",
+    "source": "master-brag-document.md",
+    "verified": true,
+    "allowed_in_resume": true
+  },
+  {
+    "id": "achievement-072",
+    "fact": "Helped customers improve investigation workflows tied to endpoint and network security operations",
+    "category": "achievement",
+    "employer": "Trend Micro",
+    "source": "master-brag-document.md",
+    "verified": true,
+    "allowed_in_resume": true
+  },
+  {
+    "id": "achievement-073",
+    "fact": "Tenure: 14.5 years",
+    "category": "metric",
+    "employer": "Dynatrace (formerly Keynote Systems)",
+    "source": "master-brag-document.md",
+    "verified": true,
+    "allowed_in_resume": true
+  },
+  {
+    "id": "achievement-074",
+    "fact": "Team: Scaled from 8 to 17 direct reports",
+    "category": "metric",
+    "employer": "Dynatrace (formerly Keynote Systems)",
+    "source": "master-brag-document.md",
+    "verified": true,
+    "allowed_in_resume": true
+  },
+  {
+    "id": "achievement-075",
+    "fact": "Retention: 99% enterprise retention",
+    "category": "metric",
+    "employer": "Dynatrace (formerly Keynote Systems)",
+    "source": "master-brag-document.md",
+    "verified": true,
+    "allowed_in_resume": true
+  },
+  {
+    "id": "achievement-076",
+    "fact": "CSAT: Improved from 66% to 83% Top Box",
+    "category": "metric",
+    "employer": "Dynatrace (formerly Keynote Systems)",
+    "source": "master-brag-document.md",
+    "verified": true,
+    "allowed_in_resume": true
+  },
+  {
+    "id": "achievement-077",
+    "fact": "Led global enterprise support and customer success operations across mission-critical web performance monitoring environments",
+    "category": "achievement",
+    "employer": "Dynatrace (formerly Keynote Systems)",
+    "source": "master-brag-document.md",
+    "verified": true,
+    "allowed_in_resume": true
+  },
+  {
+    "id": "achievement-078",
+    "fact": "Scaled the customer success organization from 8 to 17 direct reports, supporting growth across global enterprise customers",
+    "category": "achievement",
+    "employer": "Dynatrace (formerly Keynote Systems)",
+    "source": "master-brag-document.md",
+    "verified": true,
+    "allowed_in_resume": true
+  },
+  {
+    "id": "achievement-079",
+    "fact": "Maintained 99% enterprise retention across large-scale production deployments supporting high-availability web environments",
+    "category": "achievement",
+    "employer": "Dynatrace (formerly Keynote Systems)",
+    "source": "master-brag-document.md",
+    "verified": true,
+    "allowed_in_resume": true
+  },
+  {
+    "id": "achievement-080",
+    "fact": "Led operational transitions, including team relocation and offshore expansion, while maintaining service continuity and customer satisfaction",
+    "category": "achievement",
+    "employer": "Dynatrace (formerly Keynote Systems)",
+    "source": "master-brag-document.md",
+    "verified": true,
+    "allowed_in_resume": true
+  },
+  {
+    "id": "achievement-081",
+    "fact": "Improved customer satisfaction metrics from 66% to 83% Top Box across managed accounts",
+    "category": "achievement",
+    "employer": "Dynatrace (formerly Keynote Systems)",
+    "source": "master-brag-document.md",
+    "verified": true,
+    "allowed_in_resume": true
+  },
+  {
+    "id": "achievement-082",
+    "fact": "Built outsourced technical support team and doubled team size during peak growth phase",
+    "category": "achievement",
+    "employer": "Dynatrace (formerly Keynote Systems)",
+    "source": "master-brag-document.md",
+    "verified": true,
+    "allowed_in_resume": true
+  },
+  {
+    "id": "achievement-083",
+    "fact": "Delivered demos, proofs of concept, and proofs of value as part of pre-sales and post-sales technical engagements",
+    "category": "achievement",
+    "employer": "Dynatrace (formerly Keynote Systems)",
+    "source": "master-brag-document.md",
+    "verified": true,
+    "allowed_in_resume": true
+  },
+  {
+    "id": "achievement-084",
+    "fact": "Helped customers improve investigation workflows across enterprise SaaS monitoring environments",
+    "category": "achievement",
+    "employer": "Dynatrace (formerly Keynote Systems)",
+    "source": "master-brag-document.md",
+    "verified": true,
+    "allowed_in_resume": true
+  },
+  {
+    "id": "achievement-086",
+    "fact": "Securonix: $27M ARR, six accounts, 100% renewal, 81% ARR growth, 30% onboarding reduction",
+    "category": "achievement",
+    "employer": null,
+    "source": "config/profile.yml (narrative.superpowers[1]) — not corroborated by master-brag-document.md",
+    "verified": false,
+    "allowed_in_resume": false,
+    "needs_verification": true,
+    "conflict_token": "6 account"
+  },
+  {
+    "id": "achievement-087",
+    "fact": "Escalation recovery — saved $1.35M at-risk renewal at ExtraHop; protected $65M+ at-risk ARR across career",
+    "category": "achievement",
+    "employer": null,
+    "source": "config/profile.yml (narrative.superpowers[5]) — not corroborated by master-brag-document.md",
+    "verified": false,
+    "allowed_in_resume": false,
+    "needs_verification": true,
+    "conflict_token": "$1.35M"
+  },
+  {
+    "id": "achievement-088",
+    "fact": "ExtraHop — $2.4M Expansion",
+    "category": "achievement",
+    "employer": null,
+    "source": "config/profile.yml (narrative.proof_points[0].name) — not corroborated by master-brag-document.md",
+    "verified": false,
+    "allowed_in_resume": false,
+    "needs_verification": true,
+    "conflict_token": "$2.4M"
+  },
+  {
+    "id": "achievement-089",
+    "fact": "$2.4M expansion revenue by identifying east-west detection coverage gaps",
+    "category": "achievement",
+    "employer": null,
+    "source": "config/profile.yml (narrative.proof_points[0].hero_metric) — not corroborated by master-brag-document.md",
+    "verified": false,
+    "allowed_in_resume": false,
+    "needs_verification": true,
+    "conflict_token": "$2.4M"
+  },
+  {
+    "id": "achievement-090",
+    "fact": "Protected $65M+ in at-risk ARR across cybersecurity career",
+    "category": "achievement",
+    "employer": null,
+    "source": "config/profile.yml (narrative.proof_points[4].hero_metric) — not corroborated by master-brag-document.md",
+    "verified": false,
+    "allowed_in_resume": false,
+    "needs_verification": true,
+    "conflict_token": "$65M+"
+  },
+  {
+    "id": "achievement-094",
+    "fact": "McAfee: $55M ARR, eight accounts, 30%+ ARR growth, 14 expansion opportunities",
+    "category": "achievement",
+    "employer": null,
+    "source": "config/profile.yml (narrative.superpowers[2]) — not corroborated by master-brag-document.md",
+    "verified": false,
+    "allowed_in_resume": false,
+    "needs_verification": true,
+    "conflict_token": "8 account"
+  },
+  {
+    "id": "achievement-095",
+    "category": "metric",
+    "employer": null,
+    "source": "evidence-vault-tenure-audit-2026-09-27",
+    "verified": true,
+    "createdAt": "2026-09-28T04:52:14.658Z",
+    "fact": "Total professional experience: 26+ years (26 years 6 months, 318 total months) across 8 employers in enterprise SaaS and cybersecurity, June 1999 to September 2026 - calculated by summing each employer's own tenure: Dynatrace 14y4m, Trend Micro 1y10m, Proofpoint 1y11m, Total Trial Services 6m, Auth0/Okta 1y3m, McAfee 2y0m, Securonix 1y4m, ExtraHop 3y4m.",
+    "allowed_in_resume": true
+  },
+  {
+    "id": "achievement-096",
+    "category": "metric",
+    "employer": null,
+    "source": "evidence-vault-tenure-audit-2026-09-27",
+    "verified": true,
+    "createdAt": "2026-09-28T04:52:14.669Z",
+    "fact": "Cybersecurity-vendor-specific experience: 11+ years (11 years 8 months, 140 total months) across 6 dedicated security vendors - Trend Micro, Proofpoint, Auth0/Okta, McAfee, Securonix, ExtraHop - January 2014 to September 2026, excluding Dynatrace/Keynote (web performance monitoring, non-security) and Total Trial Services (legal technology, non-security).",
+    "allowed_in_resume": true
+  },
+  {
+    "id": "achievement-097",
+    "category": "metric",
+    "employer": null,
+    "source": "evidence-vault-tenure-audit-2026-09-27",
+    "verified": true,
+    "createdAt": "2026-09-28T04:52:14.676Z",
+    "fact": "Enterprise portfolio ARR managed across career: $5M to $55M ARR (Auth0/Okta $5M-$15M ARR minimum; McAfee $55M ARR maximum), spanning 6 cybersecurity and enterprise SaaS employers.",
+    "allowed_in_resume": true
+  },
+  {
+    "id": "achievement-098",
+    "category": "metric",
+    "employer": null,
+    "source": "evidence-vault-tenure-audit-2026-09-27",
+    "verified": true,
+    "createdAt": "2026-09-28T04:52:14.682Z",
+    "fact": "Delivered demos, proofs of concept (POCs), and proofs of value (POVs) at 7 of 8 employers across a 26+ year career - every role except Total Trial Services, LLC (legal technology services, no POC/POV motion).",
+    "allowed_in_resume": true
+  }
+]

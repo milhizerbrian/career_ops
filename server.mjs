@@ -417,7 +417,7 @@ app.post('/api/candidate-questions/:id/answer', express.json(), (req, res) => {
 // ─── Phase 5: Career Evidence Vault ─────────────────────────────────────────
 // UI over Phase 0's canonical candidate fact files — see
 // lib/evidence-vault.mjs. Never a second candidate database: reads/writes
-// the same data/candidate/*.json files Phase 2 scoring and resume
+// the same career-evidence/candidate/*.json files Phase 2 scoring and resume
 // generation already read.
 app.get('/api/evidence-vault', (req, res) => {
   try {

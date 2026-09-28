@@ -147,15 +147,19 @@ export function checkResumeTemplate() {
   }
 }
 
-export function checkResumeTruthSources(dataDir = path.resolve(APP_ROOT, 'data')) {
-  const required = [
-    'master-brag-document.md',
-    'Profile.pdf',
-    'FINAL Brian Milhizer Production Resume Template v3.dotx',
+export function checkResumeTruthSources(dataDir = path.resolve(APP_ROOT, 'data'), evidenceDir = dataDir) {
+  // master-brag-document.md lives in the tracked career-evidence/ directory;
+  // Profile.pdf and the template stay under data/. evidenceDir defaults to
+  // dataDir so a single-argument call (as tests use) still checks all three
+  // files in one directory.
+  const dataFiles = ['Profile.pdf', 'FINAL Brian Milhizer Production Resume Template v3.dotx'];
+  const evidenceFiles = ['master-brag-document.md'];
+  const missing = [
+    ...dataFiles.filter(file => !fs.existsSync(path.resolve(dataDir, file))),
+    ...evidenceFiles.filter(file => !fs.existsSync(path.resolve(evidenceDir, file))),
   ];
-  const missing = required.filter(file => !fs.existsSync(path.resolve(dataDir, file)));
   if (missing.length) return makeCheck('FAIL', 'Resume truth files', `missing ${missing.join(', ')}`);
-  return makeCheck('PASS', 'Resume truth files', required.join(', '));
+  return makeCheck('PASS', 'Resume truth files', [...evidenceFiles, ...dataFiles].join(', '));
 }
 
 export function checkTrackerJson(trackerPath = path.resolve(APP_ROOT, 'data', 'tracker.json')) {
@@ -200,6 +204,7 @@ export async function runHealthChecks({ env = process.env, fetchImpl = fetch } =
     ? path.resolve(env.CAREER_OPS_CONFIG_DIR, 'profile.yml')
     : undefined;
   const dataDir = env.CAREER_OPS_DATA_DIR ? path.resolve(env.CAREER_OPS_DATA_DIR) : path.resolve(APP_ROOT, 'data');
+  const evidenceDir = env.CAREER_OPS_DATA_DIR ? dataDir : path.resolve(APP_ROOT, 'career-evidence');
   const checks = [
     checkNodeVersion(),
     ...lmChecks,
@@ -208,7 +213,7 @@ export async function runHealthChecks({ env = process.env, fetchImpl = fetch } =
     await checkPdfTools(env),
     checkGoLogin(env),
     checkResumeTemplate(),
-    checkResumeTruthSources(dataDir),
+    checkResumeTruthSources(dataDir, evidenceDir),
     checkTrackerJson(trackerPath),
     checkProfileYaml(profilePath),
     checkOutputWritable(),

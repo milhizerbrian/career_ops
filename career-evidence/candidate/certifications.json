@@ -1,0 +1,47 @@
+[
+  {
+    "id": "cert-001",
+    "fact": "CEH — Certified Ethical Hacker (December 2014, earned while at Trend Micro)",
+    "category": "certification",
+    "employer": null,
+    "source": "master-brag-document.md",
+    "verified": true,
+    "allowed_in_resume": true
+  },
+  {
+    "id": "cert-002",
+    "fact": "AWS Cloud Practitioner",
+    "category": "certification",
+    "employer": null,
+    "source": "master-brag-document.md",
+    "verified": true,
+    "allowed_in_resume": true
+  },
+  {
+    "id": "cert-003",
+    "fact": "API Security Fundamentals — APISec University",
+    "category": "certification",
+    "employer": null,
+    "source": "master-brag-document.md",
+    "verified": true,
+    "allowed_in_resume": true
+  },
+  {
+    "id": "cert-004",
+    "fact": "CCSM Level II",
+    "category": "certification",
+    "employer": null,
+    "source": "master-brag-document.md",
+    "verified": true,
+    "allowed_in_resume": true
+  },
+  {
+    "id": "cert-005",
+    "fact": "Certified Support Professional Manager — TSIA",
+    "category": "certification",
+    "employer": null,
+    "source": "master-brag-document.md",
+    "verified": true,
+    "allowed_in_resume": true
+  }
+]

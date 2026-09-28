@@ -1,0 +1,803 @@
+[
+  {
+    "id": "skill-001",
+    "fact": "Cloud Security (CNAPP)",
+    "category": "skill",
+    "employer": null,
+    "source": "master-brag-document.md",
+    "verified": true,
+    "allowed_in_resume": true
+  },
+  {
+    "id": "skill-002",
+    "fact": "Architecture Reviews",
+    "category": "skill",
+    "employer": null,
+    "source": "master-brag-document.md",
+    "verified": true,
+    "allowed_in_resume": true
+  },
+  {
+    "id": "skill-003",
+    "fact": "Net Revenue Retention (NRR)",
+    "category": "skill",
+    "employer": null,
+    "source": "master-brag-document.md",
+    "verified": true,
+    "allowed_in_resume": true
+  },
+  {
+    "id": "skill-004",
+    "fact": "CNAPP",
+    "category": "skill",
+    "employer": null,
+    "source": "master-brag-document.md",
+    "verified": true,
+    "allowed_in_resume": true
+  },
+  {
+    "id": "skill-005",
+    "fact": "CWPP",
+    "category": "skill",
+    "employer": null,
+    "source": "master-brag-document.md",
+    "verified": true,
+    "allowed_in_resume": true
+  },
+  {
+    "id": "skill-006",
+    "fact": "agentless security",
+    "category": "skill",
+    "employer": null,
+    "source": "master-brag-document.md",
+    "verified": true,
+    "allowed_in_resume": true
+  },
+  {
+    "id": "skill-007",
+    "fact": "cloud workload protection",
+    "category": "skill",
+    "employer": null,
+    "source": "master-brag-document.md",
+    "verified": true,
+    "allowed_in_resume": true
+  },
+  {
+    "id": "skill-008",
+    "fact": "Kubernetes",
+    "category": "skill",
+    "employer": null,
+    "source": "master-brag-document.md",
+    "verified": true,
+    "allowed_in_resume": true
+  },
+  {
+    "id": "skill-009",
+    "fact": "CI/CD",
+    "category": "skill",
+    "employer": null,
+    "source": "master-brag-document.md",
+    "verified": true,
+    "allowed_in_resume": true
+  },
+  {
+    "id": "skill-010",
+    "fact": "NDR",
+    "category": "skill",
+    "employer": null,
+    "source": "master-brag-document.md",
+    "verified": true,
+    "allowed_in_resume": true
+  },
+  {
+    "id": "skill-011",
+    "fact": "SIEM",
+    "category": "skill",
+    "employer": null,
+    "source": "master-brag-document.md",
+    "verified": true,
+    "allowed_in_resume": true
+  },
+  {
+    "id": "skill-012",
+    "fact": "XDR",
+    "category": "skill",
+    "employer": null,
+    "source": "master-brag-document.md",
+    "verified": true,
+    "allowed_in_resume": true
+  },
+  {
+    "id": "skill-013",
+    "fact": "UEBA",
+    "category": "skill",
+    "employer": null,
+    "source": "master-brag-document.md",
+    "verified": true,
+    "allowed_in_resume": true
+  },
+  {
+    "id": "skill-014",
+    "fact": "IAM",
+    "category": "skill",
+    "employer": null,
+    "source": "master-brag-document.md",
+    "verified": true,
+    "allowed_in_resume": true
+  },
+  {
+    "id": "skill-015",
+    "fact": "endpoint security",
+    "category": "skill",
+    "employer": null,
+    "source": "master-brag-document.md",
+    "verified": true,
+    "allowed_in_resume": true
+  },
+  {
+    "id": "skill-016",
+    "fact": "net revenue retention",
+    "category": "skill",
+    "employer": null,
+    "source": "master-brag-document.md",
+    "verified": true,
+    "allowed_in_resume": true
+  },
+  {
+    "id": "skill-017",
+    "fact": "gross revenue retention",
+    "category": "skill",
+    "employer": null,
+    "source": "master-brag-document.md",
+    "verified": true,
+    "allowed_in_resume": true
+  },
+  {
+    "id": "skill-018",
+    "fact": "QBR",
+    "category": "skill",
+    "employer": null,
+    "source": "master-brag-document.md",
+    "verified": true,
+    "allowed_in_resume": true
+  },
+  {
+    "id": "skill-019",
+    "fact": "time-to-value",
+    "category": "skill",
+    "employer": null,
+    "source": "master-brag-document.md",
+    "verified": true,
+    "allowed_in_resume": true
+  },
+  {
+    "id": "skill-020",
+    "fact": "renewal recovery",
+    "category": "skill",
+    "employer": null,
+    "source": "master-brag-document.md",
+    "verified": true,
+    "allowed_in_resume": true
+  },
+  {
+    "id": "skill-021",
+    "fact": "expansion motions",
+    "category": "skill",
+    "employer": null,
+    "source": "master-brag-document.md",
+    "verified": true,
+    "allowed_in_resume": true
+  },
+  {
+    "id": "skill-022",
+    "fact": "executive engagement",
+    "category": "skill",
+    "employer": null,
+    "source": "master-brag-document.md",
+    "verified": true,
+    "allowed_in_resume": true
+  },
+  {
+    "id": "skill-023",
+    "fact": "MSSP",
+    "category": "skill",
+    "employer": null,
+    "source": "master-brag-document.md",
+    "verified": true,
+    "allowed_in_resume": true
+  },
+  {
+    "id": "skill-024",
+    "fact": "MDR",
+    "category": "skill",
+    "employer": null,
+    "source": "master-brag-document.md",
+    "verified": true,
+    "allowed_in_resume": true
+  },
+  {
+    "id": "skill-025",
+    "fact": "MSP",
+    "category": "skill",
+    "employer": null,
+    "source": "master-brag-document.md",
+    "verified": true,
+    "allowed_in_resume": true
+  },
+  {
+    "id": "skill-026",
+    "fact": "multi-tenant environments",
+    "category": "skill",
+    "employer": null,
+    "source": "master-brag-document.md",
+    "verified": true,
+    "allowed_in_resume": true
+  },
+  {
+    "id": "skill-027",
+    "fact": "POC",
+    "category": "skill",
+    "employer": null,
+    "source": "master-brag-document.md",
+    "verified": true,
+    "allowed_in_resume": true
+  },
+  {
+    "id": "skill-028",
+    "fact": "POV",
+    "category": "skill",
+    "employer": null,
+    "source": "master-brag-document.md",
+    "verified": true,
+    "allowed_in_resume": true
+  },
+  {
+    "id": "skill-029",
+    "fact": "demos",
+    "category": "skill",
+    "employer": null,
+    "source": "master-brag-document.md",
+    "verified": true,
+    "allowed_in_resume": true
+  },
+  {
+    "id": "skill-030",
+    "fact": "investigation workflows",
+    "category": "skill",
+    "employer": null,
+    "source": "master-brag-document.md",
+    "verified": true,
+    "allowed_in_resume": true
+  },
+  {
+    "id": "skill-031",
+    "fact": "NPM",
+    "category": "skill",
+    "employer": "ExtraHop",
+    "source": "master-brag-document.md",
+    "verified": true,
+    "allowed_in_resume": true
+  },
+  {
+    "id": "skill-032",
+    "fact": "network visibility",
+    "category": "skill",
+    "employer": "ExtraHop",
+    "source": "master-brag-document.md",
+    "verified": true,
+    "allowed_in_resume": true
+  },
+  {
+    "id": "skill-033",
+    "fact": "hybrid cloud",
+    "category": "skill",
+    "employer": "ExtraHop",
+    "source": "master-brag-document.md",
+    "verified": true,
+    "allowed_in_resume": true
+  },
+  {
+    "id": "skill-034",
+    "fact": "on-prem",
+    "category": "skill",
+    "employer": "ExtraHop",
+    "source": "master-brag-document.md",
+    "verified": true,
+    "allowed_in_resume": true
+  },
+  {
+    "id": "skill-035",
+    "fact": "healthcare",
+    "category": "skill",
+    "employer": "ExtraHop",
+    "source": "master-brag-document.md",
+    "verified": true,
+    "allowed_in_resume": true
+  },
+  {
+    "id": "skill-036",
+    "fact": "financial services",
+    "category": "skill",
+    "employer": "ExtraHop",
+    "source": "master-brag-document.md",
+    "verified": true,
+    "allowed_in_resume": true
+  },
+  {
+    "id": "skill-037",
+    "fact": "retail",
+    "category": "skill",
+    "employer": "ExtraHop",
+    "source": "master-brag-document.md",
+    "verified": true,
+    "allowed_in_resume": true
+  },
+  {
+    "id": "skill-038",
+    "fact": "CISO engagement",
+    "category": "skill",
+    "employer": "ExtraHop",
+    "source": "master-brag-document.md",
+    "verified": true,
+    "allowed_in_resume": true
+  },
+  {
+    "id": "skill-039",
+    "fact": "MSSP collaboration",
+    "category": "skill",
+    "employer": "ExtraHop",
+    "source": "master-brag-document.md",
+    "verified": true,
+    "allowed_in_resume": true
+  },
+  {
+    "id": "skill-040",
+    "fact": "POCs",
+    "category": "skill",
+    "employer": "ExtraHop",
+    "source": "master-brag-document.md",
+    "verified": true,
+    "allowed_in_resume": true
+  },
+  {
+    "id": "skill-041",
+    "fact": "POVs",
+    "category": "skill",
+    "employer": "ExtraHop",
+    "source": "master-brag-document.md",
+    "verified": true,
+    "allowed_in_resume": true
+  },
+  {
+    "id": "skill-042",
+    "fact": "telemetry-driven adoption",
+    "category": "skill",
+    "employer": "ExtraHop",
+    "source": "master-brag-document.md",
+    "verified": true,
+    "allowed_in_resume": true
+  },
+  {
+    "id": "skill-043",
+    "fact": "SaaS",
+    "category": "skill",
+    "employer": "Securonix",
+    "source": "master-brag-document.md",
+    "verified": true,
+    "allowed_in_resume": true
+  },
+  {
+    "id": "skill-044",
+    "fact": "enterprise security operations",
+    "category": "skill",
+    "employer": "Securonix",
+    "source": "master-brag-document.md",
+    "verified": true,
+    "allowed_in_resume": true
+  },
+  {
+    "id": "skill-045",
+    "fact": "onboarding acceleration",
+    "category": "skill",
+    "employer": "Securonix",
+    "source": "master-brag-document.md",
+    "verified": true,
+    "allowed_in_resume": true
+  },
+  {
+    "id": "skill-046",
+    "fact": "lifecycle engagement",
+    "category": "skill",
+    "employer": "Securonix",
+    "source": "master-brag-document.md",
+    "verified": true,
+    "allowed_in_resume": true
+  },
+  {
+    "id": "skill-047",
+    "fact": "at-risk account management",
+    "category": "skill",
+    "employer": "Securonix",
+    "source": "master-brag-document.md",
+    "verified": true,
+    "allowed_in_resume": true
+  },
+  {
+    "id": "skill-048",
+    "fact": "customer success transformation",
+    "category": "skill",
+    "employer": "Securonix",
+    "source": "master-brag-document.md",
+    "verified": true,
+    "allowed_in_resume": true
+  },
+  {
+    "id": "skill-049",
+    "fact": "EDR",
+    "category": "skill",
+    "employer": "McAfee",
+    "source": "master-brag-document.md",
+    "verified": true,
+    "allowed_in_resume": true
+  },
+  {
+    "id": "skill-050",
+    "fact": "DLP",
+    "category": "skill",
+    "employer": "McAfee",
+    "source": "master-brag-document.md",
+    "verified": true,
+    "allowed_in_resume": true
+  },
+  {
+    "id": "skill-051",
+    "fact": "network security",
+    "category": "skill",
+    "employer": "McAfee",
+    "source": "master-brag-document.md",
+    "verified": true,
+    "allowed_in_resume": true
+  },
+  {
+    "id": "skill-052",
+    "fact": "Fortune 500",
+    "category": "skill",
+    "employer": "McAfee",
+    "source": "master-brag-document.md",
+    "verified": true,
+    "allowed_in_resume": true
+  },
+  {
+    "id": "skill-053",
+    "fact": "cloud security onboarding",
+    "category": "skill",
+    "employer": "McAfee",
+    "source": "master-brag-document.md",
+    "verified": true,
+    "allowed_in_resume": true
+  },
+  {
+    "id": "skill-054",
+    "fact": "regulated industries",
+    "category": "skill",
+    "employer": "McAfee",
+    "source": "master-brag-document.md",
+    "verified": true,
+    "allowed_in_resume": true
+  },
+  {
+    "id": "skill-055",
+    "fact": "NPS",
+    "category": "skill",
+    "employer": "McAfee",
+    "source": "master-brag-document.md",
+    "verified": true,
+    "allowed_in_resume": true
+  },
+  {
+    "id": "skill-056",
+    "fact": "identity",
+    "category": "skill",
+    "employer": "Auth0 / Okta",
+    "source": "master-brag-document.md",
+    "verified": true,
+    "allowed_in_resume": true
+  },
+  {
+    "id": "skill-057",
+    "fact": "authentication",
+    "category": "skill",
+    "employer": "Auth0 / Okta",
+    "source": "master-brag-document.md",
+    "verified": true,
+    "allowed_in_resume": true
+  },
+  {
+    "id": "skill-058",
+    "fact": "OIDC",
+    "category": "skill",
+    "employer": "Auth0 / Okta",
+    "source": "master-brag-document.md",
+    "verified": true,
+    "allowed_in_resume": true
+  },
+  {
+    "id": "skill-059",
+    "fact": "OAuth",
+    "category": "skill",
+    "employer": "Auth0 / Okta",
+    "source": "master-brag-document.md",
+    "verified": true,
+    "allowed_in_resume": true
+  },
+  {
+    "id": "skill-060",
+    "fact": "playbook development",
+    "category": "skill",
+    "employer": "Auth0 / Okta",
+    "source": "master-brag-document.md",
+    "verified": true,
+    "allowed_in_resume": true
+  },
+  {
+    "id": "skill-061",
+    "fact": "success planning",
+    "category": "skill",
+    "employer": "Auth0 / Okta",
+    "source": "master-brag-document.md",
+    "verified": true,
+    "allowed_in_resume": true
+  },
+  {
+    "id": "skill-062",
+    "fact": "integration support",
+    "category": "skill",
+    "employer": "Auth0 / Okta",
+    "source": "master-brag-document.md",
+    "verified": true,
+    "allowed_in_resume": true
+  },
+  {
+    "id": "skill-063",
+    "fact": "customer advocacy",
+    "category": "skill",
+    "employer": "Auth0 / Okta",
+    "source": "master-brag-document.md",
+    "verified": true,
+    "allowed_in_resume": true
+  },
+  {
+    "id": "skill-064",
+    "fact": "legal tech",
+    "category": "skill",
+    "employer": "Total Trial Services, LLC",
+    "source": "master-brag-document.md",
+    "verified": true,
+    "allowed_in_resume": true
+  },
+  {
+    "id": "skill-065",
+    "fact": "team leadership",
+    "category": "skill",
+    "employer": "Total Trial Services, LLC",
+    "source": "master-brag-document.md",
+    "verified": true,
+    "allowed_in_resume": true
+  },
+  {
+    "id": "skill-066",
+    "fact": "onboarding",
+    "category": "skill",
+    "employer": "Total Trial Services, LLC",
+    "source": "master-brag-document.md",
+    "verified": true,
+    "allowed_in_resume": true
+  },
+  {
+    "id": "skill-067",
+    "fact": "client retention",
+    "category": "skill",
+    "employer": "Total Trial Services, LLC",
+    "source": "master-brag-document.md",
+    "verified": true,
+    "allowed_in_resume": true
+  },
+  {
+    "id": "skill-068",
+    "fact": "escalation handling",
+    "category": "skill",
+    "employer": "Total Trial Services, LLC",
+    "source": "master-brag-document.md",
+    "verified": true,
+    "allowed_in_resume": true
+  },
+  {
+    "id": "skill-069",
+    "fact": "satisfaction tracking",
+    "category": "skill",
+    "employer": "Total Trial Services, LLC",
+    "source": "master-brag-document.md",
+    "verified": true,
+    "allowed_in_resume": true
+  },
+  {
+    "id": "skill-070",
+    "fact": "CS org building",
+    "category": "skill",
+    "employer": "Total Trial Services, LLC",
+    "source": "master-brag-document.md",
+    "verified": true,
+    "allowed_in_resume": true
+  },
+  {
+    "id": "skill-071",
+    "fact": "email security",
+    "category": "skill",
+    "employer": "Proofpoint",
+    "source": "master-brag-document.md",
+    "verified": true,
+    "allowed_in_resume": true
+  },
+  {
+    "id": "skill-072",
+    "fact": "threat protection",
+    "category": "skill",
+    "employer": "Proofpoint",
+    "source": "master-brag-document.md",
+    "verified": true,
+    "allowed_in_resume": true
+  },
+  {
+    "id": "skill-073",
+    "fact": "security awareness training",
+    "category": "skill",
+    "employer": "Proofpoint",
+    "source": "master-brag-document.md",
+    "verified": true,
+    "allowed_in_resume": true
+  },
+  {
+    "id": "skill-074",
+    "fact": "enterprise retention",
+    "category": "skill",
+    "employer": "Proofpoint",
+    "source": "master-brag-document.md",
+    "verified": true,
+    "allowed_in_resume": true
+  },
+  {
+    "id": "skill-075",
+    "fact": "escalation management",
+    "category": "skill",
+    "employer": "Proofpoint",
+    "source": "master-brag-document.md",
+    "verified": true,
+    "allowed_in_resume": true
+  },
+  {
+    "id": "skill-076",
+    "fact": "expansion pipeline",
+    "category": "skill",
+    "employer": "Proofpoint",
+    "source": "master-brag-document.md",
+    "verified": true,
+    "allowed_in_resume": true
+  },
+  {
+    "id": "skill-077",
+    "fact": "TAM",
+    "category": "skill",
+    "employer": "Trend Micro",
+    "source": "master-brag-document.md",
+    "verified": true,
+    "allowed_in_resume": true
+  },
+  {
+    "id": "skill-078",
+    "fact": "CEH",
+    "category": "skill",
+    "employer": "Trend Micro",
+    "source": "master-brag-document.md",
+    "verified": true,
+    "allowed_in_resume": true
+  },
+  {
+    "id": "skill-079",
+    "fact": "customer reviews",
+    "category": "skill",
+    "employer": "Trend Micro",
+    "source": "master-brag-document.md",
+    "verified": true,
+    "allowed_in_resume": true
+  },
+  {
+    "id": "skill-080",
+    "fact": "web performance monitoring",
+    "category": "skill",
+    "employer": "Dynatrace (formerly Keynote Systems)",
+    "source": "master-brag-document.md",
+    "verified": true,
+    "allowed_in_resume": true
+  },
+  {
+    "id": "skill-081",
+    "fact": "enterprise SaaS",
+    "category": "skill",
+    "employer": "Dynatrace (formerly Keynote Systems)",
+    "source": "master-brag-document.md",
+    "verified": true,
+    "allowed_in_resume": true
+  },
+  {
+    "id": "skill-082",
+    "fact": "global support",
+    "category": "skill",
+    "employer": "Dynatrace (formerly Keynote Systems)",
+    "source": "master-brag-document.md",
+    "verified": true,
+    "allowed_in_resume": true
+  },
+  {
+    "id": "skill-083",
+    "fact": "team scaling",
+    "category": "skill",
+    "employer": "Dynatrace (formerly Keynote Systems)",
+    "source": "master-brag-document.md",
+    "verified": true,
+    "allowed_in_resume": true
+  },
+  {
+    "id": "skill-084",
+    "fact": "CSAT",
+    "category": "skill",
+    "employer": "Dynatrace (formerly Keynote Systems)",
+    "source": "master-brag-document.md",
+    "verified": true,
+    "allowed_in_resume": true
+  },
+  {
+    "id": "skill-085",
+    "fact": "customer satisfaction",
+    "category": "skill",
+    "employer": "Dynatrace (formerly Keynote Systems)",
+    "source": "master-brag-document.md",
+    "verified": true,
+    "allowed_in_resume": true
+  },
+  {
+    "id": "skill-086",
+    "fact": "offshore expansion",
+    "category": "skill",
+    "employer": "Dynatrace (formerly Keynote Systems)",
+    "source": "master-brag-document.md",
+    "verified": true,
+    "allowed_in_resume": true
+  },
+  {
+    "id": "skill-087",
+    "fact": "sales engineering",
+    "category": "skill",
+    "employer": "Dynatrace (formerly Keynote Systems)",
+    "source": "master-brag-document.md",
+    "verified": true,
+    "allowed_in_resume": true
+  },
+  {
+    "id": "skill-088",
+    "fact": "pre-sales",
+    "category": "skill",
+    "employer": "Dynatrace (formerly Keynote Systems)",
+    "source": "master-brag-document.md",
+    "verified": true,
+    "allowed_in_resume": true
+  },
+  {
+    "id": "skill-089",
+    "fact": "post-sales",
+    "category": "skill",
+    "employer": "Dynatrace (formerly Keynote Systems)",
+    "source": "master-brag-document.md",
+    "verified": true,
+    "allowed_in_resume": true
+  }
+]

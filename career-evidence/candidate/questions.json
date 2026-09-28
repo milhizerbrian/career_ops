@@ -1,0 +1,124 @@
+[
+  {
+    "id": "question-muj5pjga-1",
+    "requirementLabel": "technical discovery",
+    "question": "Have you done work involving technical discovery? If yes, which employer, what did you specifically do, and what measurable result or scope can we state truthfully? If no, say so — this stays marked Unknown (not held against you) until answered.",
+    "status": "open",
+    "answer": null,
+    "jobIds": [
+      "url-00q2n6on"
+    ],
+    "createdAt": "2026-09-27T01:45:27.226Z",
+    "answeredAt": null
+  },
+  {
+    "id": "question-muj5pjgd-2",
+    "requirementLabel": "cross-functional influence",
+    "question": "Have you done work involving cross-functional influence? If yes, which employer, what did you specifically do, and what measurable result or scope can we state truthfully? If no, say so — this stays marked Unknown (not held against you) until answered.",
+    "status": "open",
+    "answer": null,
+    "jobIds": [
+      "url-00q2n6on",
+      "li-4460436284",
+      "li-4418401660",
+      "li-4453266089",
+      "li-4459786240"
+    ],
+    "createdAt": "2026-09-27T01:45:27.229Z",
+    "answeredAt": null
+  },
+  {
+    "id": "question-muj5pjge-3",
+    "requirementLabel": "scalable success operations",
+    "question": "Have you done work involving scalable success operations? If yes, which employer, what did you specifically do, and what measurable result or scope can we state truthfully? If no, say so — this stays marked Unknown (not held against you) until answered.",
+    "status": "open",
+    "answer": null,
+    "jobIds": [
+      "url-00q2n6on",
+      "li-4460436284",
+      "li-4453266089"
+    ],
+    "createdAt": "2026-09-27T01:45:27.230Z",
+    "answeredAt": null
+  },
+  {
+    "id": "question-muj5pjgf-4",
+    "requirementLabel": "AI-driven workflow efficiency",
+    "question": "Have you done work involving AI-driven workflow efficiency? If yes, which employer, what did you specifically do, and what measurable result or scope can we state truthfully? If no, say so — this stays marked Unknown (not held against you) until answered.",
+    "status": "open",
+    "answer": null,
+    "jobIds": [
+      "url-00q2n6on",
+      "li-4418401660"
+    ],
+    "createdAt": "2026-09-27T01:45:27.231Z",
+    "answeredAt": null
+  },
+  {
+    "id": "question-mukhzf7c-1",
+    "requirementLabel": "value realization",
+    "question": "Have you done work involving value realization? If yes, which employer, what did you specifically do, and what measurable result or scope can we state truthfully? If no, say so — this stays marked Unknown (not held against you) until answered.",
+    "status": "open",
+    "answer": null,
+    "jobIds": [
+      "li-4460436284",
+      "li-4418401660",
+      "li-4453266089"
+    ],
+    "createdAt": "2026-09-28T00:16:49.848Z",
+    "answeredAt": null,
+    "promotedFactId": null
+  },
+  {
+    "id": "question-mukhzf7h-2",
+    "requirementLabel": "customer engagement strategy",
+    "question": "Have you done work involving customer engagement strategy? If yes, which employer, what did you specifically do, and what measurable result or scope can we state truthfully? If no, say so — this stays marked Unknown (not held against you) until answered.",
+    "status": "open",
+    "answer": null,
+    "jobIds": [
+      "li-4460436284"
+    ],
+    "createdAt": "2026-09-28T00:16:49.853Z",
+    "answeredAt": null,
+    "promotedFactId": null
+  },
+  {
+    "id": "question-mukicydr-3",
+    "requirementLabel": "AI governance",
+    "question": "Have you done work involving AI governance? If yes, which employer, what did you specifically do, and what measurable result or scope can we state truthfully? If no, say so — this stays marked Unknown (not held against you) until answered.",
+    "status": "open",
+    "answer": null,
+    "jobIds": [
+      "li-4418401660"
+    ],
+    "createdAt": "2026-09-28T00:27:21.231Z",
+    "answeredAt": null,
+    "promotedFactId": null
+  },
+  {
+    "id": "question-mukicydw-4",
+    "requirementLabel": "customer health strategy",
+    "question": "Have you done work involving customer health strategy? If yes, which employer, what did you specifically do, and what measurable result or scope can we state truthfully? If no, say so — this stays marked Unknown (not held against you) until answered.",
+    "status": "open",
+    "answer": null,
+    "jobIds": [
+      "li-4418401660"
+    ],
+    "createdAt": "2026-09-28T00:27:21.236Z",
+    "answeredAt": null,
+    "promotedFactId": null
+  },
+  {
+    "id": "question-mukkfydo-1",
+    "requirementLabel": "customer health management",
+    "question": "Have you done work involving customer health management? If yes, which employer, what did you specifically do, and what measurable result or scope can we state truthfully? If no, say so — this stays marked Unknown (not held against you) until answered.",
+    "status": "open",
+    "answer": null,
+    "jobIds": [
+      "li-4459786240"
+    ],
+    "createdAt": "2026-09-28T01:25:40.428Z",
+    "answeredAt": null,
+    "promotedFactId": null
+  }
+]

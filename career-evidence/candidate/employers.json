@@ -1,0 +1,74 @@
+[
+  {
+    "id": "employer-001",
+    "fact": "ExtraHop — Customer Success Engineer (Strategic Accounts), May 2023 – Present (~2 years) | Remote (Network Detection & Response (NDR), Network Performance Monitoring (NPM))",
+    "category": "employer",
+    "employer": "ExtraHop",
+    "source": "master-brag-document.md",
+    "verified": true,
+    "allowed_in_resume": true
+  },
+  {
+    "id": "employer-002",
+    "fact": "Securonix — Strategic Customer Success Manager, July 2021 – November 2022 (1 year 5 months) | Remote (SIEM / UEBA / SaaS)",
+    "category": "employer",
+    "employer": "Securonix",
+    "source": "master-brag-document.md",
+    "verified": true,
+    "allowed_in_resume": true
+  },
+  {
+    "id": "employer-003",
+    "fact": "McAfee — Enterprise Customer Success Manager, July 2019 – July 2021 (2 years 1 month) | Remote/Dallas (Endpoint (EDR), Network Security, IAM, DLP | Fortune 500)",
+    "category": "employer",
+    "employer": "McAfee",
+    "source": "master-brag-document.md",
+    "verified": true,
+    "allowed_in_resume": true
+  },
+  {
+    "id": "employer-004",
+    "fact": "Auth0 / Okta — Senior Customer Success Manager, April 2018 – July 2019 (1 year 4 months) | Remote (Identity & Access Management (IAM) | Authentication / Authorization SaaS)",
+    "category": "employer",
+    "employer": "Auth0 / Okta",
+    "source": "master-brag-document.md",
+    "verified": true,
+    "allowed_in_resume": true
+  },
+  {
+    "id": "employer-005",
+    "fact": "Total Trial Services, LLC — Director of Customer Success, October 2017 – April 2018 (7 months) | Dallas (Legal technology services)",
+    "category": "employer",
+    "employer": "Total Trial Services, LLC",
+    "source": "master-brag-document.md",
+    "verified": true,
+    "allowed_in_resume": true
+  },
+  {
+    "id": "employer-006",
+    "fact": "Proofpoint — Customer Success Manager, November 2015 – October 2017 (2 years) | Remote/Dallas (Email security, advanced threat protection, security awareness)",
+    "category": "employer",
+    "employer": "Proofpoint",
+    "source": "master-brag-document.md",
+    "verified": true,
+    "allowed_in_resume": true
+  },
+  {
+    "id": "employer-007",
+    "fact": "Trend Micro — Technical Account Manager / Customer Account Manager, January 2014 – November 2015 (1 year 11 months) | Las Colinas, Texas (Endpoint and network security | Financial Services & Healthcare)",
+    "category": "employer",
+    "employer": "Trend Micro",
+    "source": "master-brag-document.md",
+    "verified": true,
+    "allowed_in_resume": true
+  },
+  {
+    "id": "employer-008",
+    "fact": "Dynatrace (formerly Keynote Systems) — Global Manager | Technical Support | Sales Engineer (Pre and Post), June 1999 – October 2013 (14 years 5 months) | Plano, Texas (Web performance monitoring | Enterprise SaaS)",
+    "category": "employer",
+    "employer": "Dynatrace (formerly Keynote Systems)",
+    "source": "master-brag-document.md",
+    "verified": true,
+    "allowed_in_resume": true
+  }
+]

@@ -1,0 +1,63 @@
+{
+  "generatedAt": "2026-09-24T23:04:22.574Z",
+  "source": "data/master-brag-document.md",
+  "verified": true,
+  "preferredTitles": [
+    "Director of Customer Success",
+    "Senior Customer Success Manager",
+    "Senior Technical Account Manager",
+    "Customer Success Architect",
+    "Customer Success Engineer (Strategic Accounts)",
+    "Senior CSE",
+    "Principal CSE",
+    "Technical Customer Success Manager",
+    "Strategic CSM"
+  ],
+  "targetCompanyTypes": [
+    "Cloud security vendors",
+    "CNAPP/CWPP platforms",
+    "NDR/SIEM/XDR companies",
+    "cybersecurity SaaS"
+  ],
+  "mustHaveKeywords": [
+    "CNAPP",
+    "CWPP",
+    "agentless security",
+    "cloud workload protection",
+    "Kubernetes",
+    "CI/CD",
+    "NDR",
+    "SIEM",
+    "XDR",
+    "UEBA",
+    "IAM",
+    "endpoint security",
+    "net revenue retention",
+    "gross revenue retention",
+    "QBR",
+    "time-to-value",
+    "renewal recovery",
+    "expansion motions",
+    "executive engagement",
+    "MSSP",
+    "MDR",
+    "MSP",
+    "multi-tenant environments",
+    "POC",
+    "POV",
+    "demos",
+    "investigation workflows"
+  ],
+  "dealBreakerExclusions": "Do not include hardware, non-security SaaS, or roles older than Dynatrace unless specifically requested",
+  "resumeWritingRules": [
+    "Frame Brian as an operator, not a relationship manager. Operator means builds systems, aligns stakeholders, drives execution, closes gaps, and owns commercial outcomes.",
+    "Do not frame him as someone who merely manages relationships, provides support, serves as a point of contact, or facilitates communication.",
+    "Every bullet should show at least two of: measurable impact, scope, method or system, stakeholder, and business outcome.",
+    "Strong bullets show the problem solved, the decision or method Brian used, and the measurable result.",
+    "Do not invent metrics, titles, employers, tools, certifications, dates, or education. If a needed metric is missing, use [X%] or [$XM ARR].",
+    "Never use: results-driven, proven track record, passionate about, dynamic, thought leader, world-class, best-in-class, synergy, leverage as jargon, empowered.",
+    "No em dashes. No \"Responsible for...\" phrasing. No three consecutive gerund-opening bullets. No consecutive bullets starting with the same verb.",
+    "Include at least one specific platform, stakeholder type, or use case per role when space allows so domain knowledge is visible.",
+    "Before finalizing, the top half of page one must show seniority, ARR or portfolio scale, retention or expansion result, and cybersecurity domain credibility."
+  ]
+}

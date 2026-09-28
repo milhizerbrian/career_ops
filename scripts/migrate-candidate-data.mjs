@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // Phase 0: migrate verified facts from data/master-brag-document.md into
-// the canonical data/candidate/*.json fact store. Read-only against all
+// the canonical career-evidence/candidate/*.json fact store. Read-only against all
 // existing files (master-brag-document.md, config/profile.yml, tracker.json).
 // Idempotent: safe to re-run; skips facts already present by exact text match.
 import fs from 'fs';
@@ -10,8 +10,11 @@ import yaml from 'js-yaml';
 
 const APP_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const DATA_DIR = path.resolve(APP_ROOT, 'data');
-const CANDIDATE_DIR = path.resolve(DATA_DIR, 'candidate');
-const BRAG_PATH = path.resolve(DATA_DIR, 'master-brag-document.md');
+// Canonical fact store lives in the tracked career-evidence/ directory, not
+// gitignored data/ (see career-evidence/README.md).
+const EVIDENCE_DIR = path.resolve(APP_ROOT, 'career-evidence');
+const CANDIDATE_DIR = path.resolve(EVIDENCE_DIR, 'candidate');
+const BRAG_PATH = path.resolve(EVIDENCE_DIR, 'master-brag-document.md');
 const PROFILE_YML_PATH = path.resolve(APP_ROOT, 'config', 'profile.yml');
 
 const NUMBER_WORDS = {
