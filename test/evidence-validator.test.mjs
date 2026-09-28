@@ -106,6 +106,12 @@ describe('findUnsupportedFactualClaims (Phase 10 thank-you safety)', async () =>
     assert.ok(findUnsupportedFactualClaims('I bring many years of hands-on leadership.', support).includes('many years'));
   });
 
+  it('accepts currency-backed numbers and ordinary sentence-initial words', () => {
+    const facts = ['ExtraHop enterprise renewals across a $23M ARR portfolio'];
+    assert.deepEqual(findUnsupportedFactualClaims('Brings renewal discipline from a $23M ARR portfolio at ExtraHop.', facts), []);
+    assert.ok(findUnsupportedFactualClaims('Palo Alto Networks renewals across a $23M portfolio.', facts).includes('Palo Alto Networks'));
+  });
+
   it('treats an empty support set as supporting nothing', () => {
     assert.ok(findUnsupportedFactualClaims('At Zenity I led 40 accounts.', []).length > 0);
   });

@@ -28,6 +28,7 @@ import {
   inferResumePositioningMode,
   lowestPrioritySelectedBullet,
   planningContextText,
+  repairThinSummary,
   rescueQualityUntilStable,
   sanitizeResumeLanguage,
   selectBestJobDescription,
@@ -548,6 +549,57 @@ describe('generic JD source selection', () => {
     });
 
     assert.equal(assessment.usable, false);
+  });
+});
+
+describe('repairThinSummary (one targeted local repair)', () => {
+  const TRUTH = 'Brian led ExtraHop enterprise renewals across a $23M ARR portfolio, built the customer success function at Total Trial Services with 8 direct reports, and ran executive business reviews with CISO stakeholders at Securonix.';
+  const SHORT = 'Customer success leader for enterprise cybersecurity accounts. Drives renewals and adoption for security customers.';
+  const GOOD = 'Enterprise customer success leader who ran ExtraHop enterprise renewals across a $23M ARR portfolio and executive business reviews with CISO stakeholders at Securonix. Built the customer success function at Total Trial Services with 8 direct reports, turning adoption and renewal work into a repeatable operating model. Brings hands-on portfolio ownership, stakeholder alignment, and renewal discipline to growing security customer programs.';
+
+  async function run(summary, lmText, env = {}) {
+    const calls = [];
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = async (url) => {
+      calls.push(String(url));
+      return { ok: true, status: 200, json: async () => ({ choices: [{ message: { content: lmText } }] }), text: async () => '' };
+    };
+    try {
+      let out;
+      await withEnv({ CAREER_OPS_DISABLE_LM_STUDIO: undefined, ...env }, async () => {
+        out = await repairThinSummary({ PROFESSIONAL_SUMMARY: summary, TITLE_LINE: 'Customer Success Leader' }, { candidateTruth: TRUTH, jdText: 'Customer Success Manager for security customers.' });
+      });
+      return { out, calls };
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  }
+
+  it('replaces a thin summary with one grounded local rewrite', async () => {
+    const { out, calls } = await run(SHORT, JSON.stringify({ PROFESSIONAL_SUMMARY: GOOD }));
+    assert.equal(out.PROFESSIONAL_SUMMARY, GOOD);
+    assert.equal(calls.length, 1);
+    assert.match(calls[0], /^http:\/\/localhost:1234\//);
+  });
+
+  it('keeps the original when the rewrite invents claims, with no second attempt', async () => {
+    const invented = GOOD.replace('Built the customer success function', 'After 12 years at Palo Alto Networks as a CISSP-certified director, built the customer success function');
+    const { out, calls } = await run(SHORT, JSON.stringify({ PROFESSIONAL_SUMMARY: invented }));
+    assert.equal(out.PROFESSIONAL_SUMMARY, SHORT);
+    assert.equal(calls.length, 1);
+  });
+
+  it('keeps the original when the rewrite is still too thin', async () => {
+    const { out, calls } = await run(SHORT, JSON.stringify({ PROFESSIONAL_SUMMARY: 'Customer success leader.' }));
+    assert.equal(out.PROFESSIONAL_SUMMARY, SHORT);
+    assert.equal(calls.length, 1);
+  });
+
+  it('does nothing when the summary already meets 45 words or LM Studio is disabled', async () => {
+    assert.equal((await run(GOOD, '{}')).calls.length, 0);
+    const disabled = await run(SHORT, '{}', { CAREER_OPS_DISABLE_LM_STUDIO: '1' });
+    assert.equal(disabled.calls.length, 0);
+    assert.equal(disabled.out.PROFESSIONAL_SUMMARY, SHORT);
   });
 });
 
