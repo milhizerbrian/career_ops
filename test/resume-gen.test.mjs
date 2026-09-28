@@ -503,6 +503,20 @@ describe('generic resume evidence review', () => {
   });
 });
 
+describe('terminology equivalence in evidence matching', () => {
+  it('recognizes Executive Business Review as equivalent to QBR for evidence matching', () => {
+    const requirements = [{ requirement: 'customer planning and QBR governance' }];
+    const evidenceMap = buildEvidenceMap(requirements, 'Led a quarterly Executive Business Review with CISO stakeholders to align on adoption and renewal.');
+    assert.equal(evidenceMap.find(item => item.requirement === 'customer planning and QBR governance').status, 'partial');
+  });
+
+  it('recognizes Technical Account Management as equivalent language for SME positioning', () => {
+    const requirements = [{ requirement: 'SME positioning' }];
+    const evidenceMap = buildEvidenceMap(requirements, 'Served as the Technical Account Manager for enterprise financial services customers.');
+    assert.notEqual(evidenceMap.find(item => item.requirement === 'SME positioning').status, 'gap');
+  });
+});
+
 describe('extractJobRequirements section weighting', () => {
   it('ranks a requirement named in the Requirements section above one only in Nice to Have', () => {
     const jd = [
