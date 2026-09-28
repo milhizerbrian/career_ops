@@ -1308,6 +1308,16 @@ describe('active resume prompts', () => {
     assert.equal(classifyResumeRole(jd), 'startup-cs-builder');
   });
 
+  it('does not classify an ordinary enterprise CSM JD as startup-cs-builder just because it mentions voice of the customer or process design', () => {
+    const jd = 'Customer Success Manager. Manage a portfolio of enterprise accounts. Lead kickoff meetings, success reviews, and Executive Business Reviews. Represent the voice of the customer by providing feedback to Product Management. Contribute to continuous process design improvements based on customer feedback.';
+    assert.notEqual(classifyResumeRole(jd), 'startup-cs-builder');
+  });
+
+  it('still classifies a genuinely startup-framed JD as startup-cs-builder', () => {
+    const jd = 'Customer Success Manager at a fast-paced, high-growth startup. Build our customer success function from the ground up as a foundational team member.';
+    assert.equal(classifyResumeRole(jd), 'startup-cs-builder');
+  });
+
   it('detects Hakimo-style commercial startup CSM roles separately from cybersecurity builder roles', () => {
     const jd = [
       'Customer Success Manager at an AI-powered physical security startup.',
