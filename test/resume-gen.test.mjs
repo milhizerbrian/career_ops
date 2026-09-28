@@ -1676,6 +1676,16 @@ describe('active resume prompts', () => {
     assert.match(repaired.METRICS_LINE, /\$55M ARR Portfolio \(Peak\)/);
   });
 
+  it('flags a thin METRICS_LINE even when KEY_ACHIEVEMENTS already carries a metric', () => {
+    const planningContext = { roleMode: 'customer-success', requirements: [] };
+    const issues = critiqueResumeDraft({
+      METRICS_LINE: '120% NRR',
+      KEY_ACHIEVEMENT_1: 'Managed a $23M ARR portfolio across 30 enterprise accounts.',
+    }, planningContext);
+
+    assert.ok(issues.some(issue => issue.code === 'weak-above-fold-proof' && issue.field === 'METRICS_LINE'));
+  });
+
   it('critiques above-fold sections that miss the target role business model', () => {
     const planningContext = buildResumePlanningContext(
       'Senior Sales Engineer owning pre-sales discovery, solution architecture, demos, POC success criteria, and technical business cases.',
