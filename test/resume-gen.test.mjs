@@ -29,6 +29,8 @@ import {
   lowestPrioritySelectedBullet,
   planningContextText,
   repairThinSummary,
+  dedupeMetricsLine,
+  ensureLocalModelContext,
   rescueQualityUntilStable,
   sanitizeResumeLanguage,
   selectBestJobDescription,
@@ -553,8 +555,8 @@ describe('generic JD source selection', () => {
 });
 
 describe('repairThinSummary (one targeted local repair)', () => {
-  const TRUTH = 'Brian led ExtraHop enterprise renewals across a $23M ARR portfolio, built the customer success function at Total Trial Services with 8 direct reports, and ran executive business reviews with CISO stakeholders at Securonix.';
-  const SHORT = 'Customer success leader for enterprise cybersecurity accounts. Drives renewals and adoption for security customers.';
+  const TRUTH = 'Brian led ExtraHop NDR and Securonix SIEM enterprise renewals across a $23M ARR portfolio, built the customer success function at Total Trial Services with 8 direct reports, and ran executive business reviews with CISO stakeholders at Securonix.';
+  const SHORT = 'Customer success leader for enterprise cybersecurity accounts across NDR and SIEM platforms. Drives renewals, adoption, and executive alignment for security customers at enterprise scale.';
   const GOOD = 'Enterprise customer success leader who ran ExtraHop enterprise renewals across a $23M ARR portfolio and executive business reviews with CISO stakeholders at Securonix. Built the customer success function at Total Trial Services with 8 direct reports, turning adoption and renewal work into a repeatable operating model. Brings hands-on portfolio ownership, stakeholder alignment, and renewal discipline to growing security customer programs.';
 
   async function run(summary, lmText, env = {}) {
@@ -575,22 +577,31 @@ describe('repairThinSummary (one targeted local repair)', () => {
     }
   }
 
-  it('replaces a thin summary with one grounded local rewrite', async () => {
-    const { out, calls } = await run(SHORT, JSON.stringify({ PROFESSIONAL_SUMMARY: GOOD }));
-    assert.equal(out.PROFESSIONAL_SUMMARY, GOOD);
+  const EXTRA = 'Built the customer success function at Total Trial Services with 8 direct reports and ran executive business reviews with CISO stakeholders at Securonix.';
+  const THREE_SHORT = 'Customer success leader. Drives renewals for security customers. Leads enterprise adoption.';
+
+  it('adds one grounded sentence to a thin 2-sentence summary', async () => {
+    const { out, calls } = await run(SHORT, JSON.stringify({ SENTENCE: EXTRA }));
+    assert.equal(out.PROFESSIONAL_SUMMARY, `${SHORT} ${EXTRA}`);
     assert.equal(calls.length, 1);
     assert.match(calls[0], /^http:\/\/localhost:1234\//);
   });
 
-  it('keeps the original when the rewrite invents claims, with no second attempt', async () => {
-    const invented = GOOD.replace('Built the customer success function', 'After 12 years at Palo Alto Networks as a CISSP-certified director, built the customer success function');
-    const { out, calls } = await run(SHORT, JSON.stringify({ PROFESSIONAL_SUMMARY: invented }));
+  it('rewrites a thin 3-sentence summary in one call', async () => {
+    const { out, calls } = await run(THREE_SHORT, JSON.stringify({ PROFESSIONAL_SUMMARY: GOOD }));
+    assert.equal(out.PROFESSIONAL_SUMMARY, GOOD);
+    assert.equal(calls.length, 1);
+  });
+
+  it('keeps the original when the addition invents claims, with no second attempt', async () => {
+    const invented = 'After 12 years at Palo Alto Networks as a CISSP-certified director, built the customer success function at Total Trial Services.';
+    const { out, calls } = await run(SHORT, JSON.stringify({ SENTENCE: invented }));
     assert.equal(out.PROFESSIONAL_SUMMARY, SHORT);
     assert.equal(calls.length, 1);
   });
 
-  it('keeps the original when the rewrite is still too thin', async () => {
-    const { out, calls } = await run(SHORT, JSON.stringify({ PROFESSIONAL_SUMMARY: 'Customer success leader.' }));
+  it('keeps the original when the result is still too thin', async () => {
+    const { out, calls } = await run(SHORT, JSON.stringify({ SENTENCE: 'Customer success leader.' }));
     assert.equal(out.PROFESSIONAL_SUMMARY, SHORT);
     assert.equal(calls.length, 1);
   });
@@ -600,6 +611,80 @@ describe('repairThinSummary (one targeted local repair)', () => {
     const disabled = await run(SHORT, '{}', { CAREER_OPS_DISABLE_LM_STUDIO: '1' });
     assert.equal(disabled.calls.length, 0);
     assert.equal(disabled.out.PROFESSIONAL_SUMMARY, SHORT);
+  });
+});
+
+describe('ensureLocalModelContext', () => {
+  const model = 'qwen2.5-coder-7b-instruct-mlx';
+  function deps(info) {
+    const execs = [];
+    return {
+      execs,
+      options: {
+        model,
+        contextTokens: 16384,
+        fetchImpl: async () => ({ ok: true, json: async () => info }),
+        execImpl: async (file, args) => { execs.push([file, ...args].join(' ')); },
+        lmsPath: '/fake/lms',
+        exists: () => true,
+      },
+    };
+  }
+
+  it('does nothing when the model is already loaded with enough context', async () => {
+    const { execs, options } = deps({ state: 'loaded', loaded_context_length: 16384 });
+    assert.equal(await ensureLocalModelContext(options), 'ready');
+    assert.deepEqual(execs, []);
+  });
+
+  it('loads the model with the configured context and an idle TTL when not loaded', async () => {
+    const { execs, options } = deps({ state: 'not-loaded' });
+    assert.equal(await ensureLocalModelContext(options), 'loaded');
+    assert.deepEqual(execs, [`/fake/lms load ${model} --context-length 16384 --ttl 3600 -y`]);
+  });
+
+  it('reloads a model that was loaded with too small a context', async () => {
+    const { execs, options } = deps({ state: 'loaded', loaded_context_length: 4096 });
+    assert.equal(await ensureLocalModelContext(options), 'loaded');
+    assert.deepEqual(execs, [`/fake/lms unload ${model}`, `/fake/lms load ${model} --context-length 16384 --ttl 3600 -y`]);
+  });
+
+  it('leaves loading to LM Studio when the lms CLI is unavailable', async () => {
+    const { execs, options } = deps({ state: 'not-loaded' });
+    assert.equal(await ensureLocalModelContext({ ...options, exists: () => false }), 'no-cli');
+    assert.deepEqual(execs, []);
+  });
+});
+
+describe('structured model output becomes resume text', () => {
+  it('renders object/array field values in the template format instead of [object Object]', () => {
+    assert.equal(
+      sanitizeResumeLanguage({ 'Customer Success': ['Adoption', 'Renewals'], 'Security Domains': ['NDR', 'SIEM'] }),
+      'Customer Success: Adoption, Renewals | Security Domains: NDR, SIEM',
+    );
+    assert.equal(sanitizeResumeLanguage(['QBRs', 'Renewals']), 'QBRs, Renewals');
+    assert.equal(sanitizeResumeLanguage('plain text'), 'plain text');
+  });
+
+  it('flattens a synthesized object CORE_COMPETENCIES into text', () => {
+    const out = flattenDynamicResumeDraft(
+      { CORE_COMPETENCIES: { 'Customer Success': ['Adoption', 'Renewals'] }, ROLES: [] },
+      ['CORE_COMPETENCIES'],
+      null,
+    );
+    assert.equal(sanitizeResumeLanguage(out.CORE_COMPETENCIES), 'Customer Success: Adoption, Renewals');
+  });
+
+  it('quality gate rejects serialized objects', () => {
+    assert.throws(() => validateResumeQuality({ CORE_COMPETENCIES: '[object Object]' }, ['CORE_COMPETENCIES']), /object/i);
+  });
+
+  it('drops a repeated METRICS_LINE segment', () => {
+    assert.equal(
+      dedupeMetricsLine('$23M ARR, 98% GRR, 120% NRR | $55M ARR Portfolio (Peak) | 120% NRR'),
+      '$23M ARR, 98% GRR, 120% NRR | $55M ARR Portfolio (Peak)',
+    );
+    assert.equal(dedupeMetricsLine('$13M renewal | 98% GRR'), '$13M renewal | 98% GRR');
   });
 });
 

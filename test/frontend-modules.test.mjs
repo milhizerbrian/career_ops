@@ -188,7 +188,8 @@ describe('frontend ES modules', () => {
     assert.match(coordinator, /scheduleResumeHelperRenice/);
     assert.match(coordinator, /RESUME_MAX_CONCURRENT/);
     assert.match(server, /finally/);
-    assert.match(cleanup, /llmworker/);
+    // LM Studio now runs resume AI; its model must stay loaded between runs.
+    assert.doesNotMatch(cleanup, /llmworker/);
     assert.match(cleanup, /headless LibreOffice/);
     assert.match(cleanup, /RESUME_CLEANUP_PROCESSES/);
     assert.match(throttle, /RESUME_RESOURCE_THROTTLE/);
