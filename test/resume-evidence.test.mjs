@@ -198,3 +198,35 @@ describe('evidenceSummarySentences', () => {
   });
 });
 
+describe('enforceResumeEvidence fills genuinely empty role bullets', () => {
+  it('fills the first bullet of a role that started with zero bullets using an unused verified achievement for that employer', () => {
+    const facts = [
+      { id: 'employer-1', category: 'employer', employer: 'Acme Security', verified: true, allowed_in_resume: true, fact: 'Acme Security — Customer Success Manager, January 2020 – Present' },
+      { id: 'achievement-1', category: 'achievement', employer: 'Acme Security', verified: true, allowed_in_resume: true, fact: 'Resolved complex escalations by coordinating across support, product, and engineering teams.' },
+      { id: 'achievement-2', category: 'achievement', employer: 'Acme Security', verified: true, allowed_in_resume: true, fact: 'Maintained 98% retention across an enterprise portfolio by driving adoption.' },
+    ];
+    const index = buildEvidenceIndex(facts);
+    const replacements = { JOB_1_BULLET_1: '', JOB_1_BULLET_2: '', JOB_1_BULLET_3: '' };
+    const fields = Object.keys(replacements);
+
+    const { replacements: out, report } = enforceResumeEvidence(replacements, fields, index, { jdText: 'Own customer escalations and coordinate resolution.' });
+
+    assert.ok(out.JOB_1_BULLET_1.trim(), 'first bullet should be filled');
+    assert.equal(out.JOB_1_BULLET_2, '', 'only the first empty slot is filled, not every slot');
+    assert.equal(out.JOB_1_BULLET_3, '');
+    assert.ok(report.replaced.some(item => item.field === 'JOB_1_BULLET_1'));
+    assert.match(out.JOB_1_BULLET_1, /escalation/i);
+  });
+
+  it('does not fill an empty role when no verified evidence exists for that employer', () => {
+    const facts = [
+      { id: 'employer-1', category: 'employer', employer: 'Acme Security', verified: true, allowed_in_resume: true, fact: 'Acme Security — Customer Success Manager, January 2020 – Present' },
+    ];
+    const index = buildEvidenceIndex(facts);
+    const replacements = { JOB_1_BULLET_1: '' };
+    const { replacements: out } = enforceResumeEvidence(replacements, ['JOB_1_BULLET_1'], index, { jdText: '' });
+
+    assert.equal(out.JOB_1_BULLET_1, '');
+  });
+});
+
