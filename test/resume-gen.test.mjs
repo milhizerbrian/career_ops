@@ -606,6 +606,22 @@ describe('page-fit bullet floor', () => {
       current = { ...current, [drop.field]: '' };
     }
   });
+
+  it('falls back to score-only tie-breaking once every role is already down to one bullet, without throwing', () => {
+    const planningContext = { roleMode: 'customer-success', requirements: [] };
+    // Both roles already at the floor (one bullet each) — the per-role-floor
+    // guard has nothing left to protect, so this must fall back to picking
+    // by score alone rather than getting stuck with an empty candidate pool.
+    const replacements = {
+      JOB_1_BULLET_1: 'Drove 98% retention through structured account health reviews and CISO business reviews.',
+      JOB_5_BULLET_1: 'Supported day-to-day account activity without a specific metric.',
+    };
+
+    const drop = lowestPrioritySelectedBullet(replacements, planningContext);
+
+    assert.ok(drop, 'expected a bullet to be returned even with both roles at the floor');
+    assert.equal(drop.field, 'JOB_5_BULLET_1', 'the lower-scoring of the two remaining bullets should be picked');
+  });
 });
 
 describe('summary sentence repetition', () => {
@@ -654,7 +670,7 @@ describe('JD coverage audit', () => {
     ];
     const replacements = {
       KEY_ACHIEVEMENT_1: 'Improved onboarding consistency across 87 client relationships.',
-      JOB_1_BULLET_1: 'Reduced churn by identifying at-risk accounts and coordinating recovery.',
+      JOB_1_BULLET_1: 'Resolved complex escalations across support and product functions.',
       JOB_5_BULLET_1: 'Owned renewal execution and expansion for a mid-market book of business.',
     };
 
@@ -666,6 +682,22 @@ describe('JD coverage audit', () => {
     assert.ok(audit.covered.includes('renewal and retention ownership'));
     assert.ok(audit.buried.includes('renewal and retention ownership'));
     assert.ok(audit.unsupportedGaps.includes('CRM opportunity hygiene'));
+  });
+
+  it('prefers the vault-backed verifiedTier over the raw text-heuristic status when both are present', () => {
+    // status says 'partial' (weak text-search hit), but the vault tier says
+    // 'unknown' (no verified fact actually supports it) — the stronger,
+    // fact-traced signal must win, since that's the whole point of wiring
+    // enrichEvidenceMapWithVault into the audit.
+    const requirements = [{ requirement: 'CRM opportunity hygiene', source: 'jd', priority: 5 }];
+    const evidenceMap = [{ requirement: 'CRM opportunity hygiene', status: 'partial', verifiedTier: 'unknown', verifiedEvidenceIds: [] }];
+    const replacements = { PROFESSIONAL_SUMMARY: 'Kept customer records current across a $23M portfolio.' };
+
+    const audit = auditJdCoverage({ requirements, evidenceMap, replacements });
+
+    assert.ok(audit.unsupportedGaps.includes('CRM opportunity hygiene'));
+    assert.ok(!audit.covered.includes('CRM opportunity hygiene'));
+    assert.ok(!audit.missingWithEvidence.includes('CRM opportunity hygiene'));
   });
 });
 
