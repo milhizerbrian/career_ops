@@ -14,6 +14,7 @@ import { loadBragDoc, loadJobById, loadPipeline, dismissPipelineItem } from './l
 import { updateTracker, updateJobWithPrevious } from './lib/tracker-store.mjs';
 import { generateResume, analyzeGaps, generateGapQuestions, applyGapAnswersToBragDoc, assessStoredJobDescription } from './lib/resume-gen.mjs';
 import { startWatcher } from './lib/watcher.mjs';
+import { redactSecrets } from './lib/logger.mjs';
 import { scoreAtsMatch } from './lib/ats-utils.mjs';
 import { computeOiScore } from './lib/opportunity-intelligence.mjs';
 import { buildGeneratedDocEntry } from './lib/generated-docs.mjs';
@@ -818,7 +819,8 @@ app.post('/api/create-docs/:id', express.json(), async (req, res) => {
   try {
     saveGeneratedDoc(jobId, await generateResume(jobId, runIo, injectedSkills));
   } catch (err) {
-    emitResumeEvent('progress', { jobId, stage: 'error', status: 'failed', message: err.message });
+    process.stderr.write(`[resume-run] job=${jobId} failed: ${redactSecrets(err?.message || String(err))}\n`);
+    emitResumeEvent('progress', { jobId, stage: 'error', status: 'failed', message: redactSecrets(err?.message || String(err)) });
   } finally {
     await resources.release().catch(err => {
       process.stderr.write(`[resume-cleanup] ${err.message}\n`);

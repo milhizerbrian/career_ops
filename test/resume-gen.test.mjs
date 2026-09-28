@@ -551,9 +551,43 @@ describe('generic JD source selection', () => {
   });
 });
 
+describe('gap questions already answered', () => {
+  it('does not re-ask a gap that already has a saved answer in Recovered Evidence', () => {
+    const bragDoc = [
+      '## ExtraHop', 'Managed enterprise accounts.', '',
+      '---', '', '## Recovered Evidence', '',
+      '- customer health management: I built customer health management at Securonix.',
+      '- AI governance: unverified. Ask for a concrete sample first.', '',
+    ].join('\n');
+    const candidates = buildGapQuestionCandidates({
+      requirements: [
+        { requirement: 'customer health management', source: 'jd' },
+        { requirement: 'AI governance', source: 'jd' },
+        { requirement: 'RFP/RFI response', source: 'jd' },
+      ],
+      evidenceMap: [
+        { requirement: 'customer health management', status: 'partial' },
+        { requirement: 'AI governance', status: 'gap' },
+        { requirement: 'RFP/RFI response', status: 'gap' },
+      ],
+      bragDoc,
+    });
+    assert.deepEqual(candidates.map(c => c.gap), ['RFP/RFI response']);
+  });
+
+  it('matches saved answers regardless of letter case', () => {
+    const candidates = buildGapQuestionCandidates({
+      requirements: [{ requirement: 'customer health management', source: 'jd' }],
+      evidenceMap: [{ requirement: 'customer health management', status: 'partial' }],
+      bragDoc: '## Recovered Evidence\n\n- Customer Health Management: yes\n',
+    });
+    assert.deepEqual(candidates, []);
+  });
+});
+
 describe('DOCX-first resume finish', () => {
   it('repairs weak generated bullets before failing the quality gate', async () => {
-    await withEnv({ ANTHROPIC_API_KEY: '', RESUME_PDF_EXPORT: '0', RESUME_PAGE_VALIDATION: '0' }, async () => {
+    await withEnv({ CAREER_OPS_DISABLE_LM_STUDIO: '1', RESUME_PDF_EXPORT: '0', RESUME_PAGE_VALIDATION: '0' }, async () => {
       const state = finishState(`quality-repair-${Date.now()}`);
       state.fields = [
         'PROFESSIONAL_SUMMARY',
@@ -575,8 +609,40 @@ describe('DOCX-first resume finish', () => {
     });
   });
 
+  it('sends AI requests only to local LM Studio even when an Anthropic key is configured', async () => {
+    const calls = [];
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = async (url, init = {}) => {
+      calls.push(`${url} ${JSON.stringify(init.headers || {})}`);
+      return { ok: true, status: 200, json: async () => ({ choices: [{ message: { content: '{}' } }] }), text: async () => '{}' };
+    };
+    try {
+      await withEnv({
+        ANTHROPIC_API_KEY: 'sk-ant-test-key-should-never-be-used',
+        CAREER_OPS_DISABLE_LM_STUDIO: undefined,
+        RESUME_PDF_EXPORT: '0',
+        RESUME_PAGE_VALIDATION: '0',
+      }, async () => {
+        const state = finishState(`local-ai-only-${Date.now()}`);
+        state.replacements = {
+          ...VALID_REPLACEMENTS,
+          JOB_2_BULLET_3: 'Managed customer relationships and supported implementation planning for accounts.',
+        };
+        const result = await generateResumeFinish(state);
+        assert.ok(result.docxUrl.endsWith('.docx'));
+      });
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+    assert.ok(calls.length > 0, 'expected the finish pipeline to make local AI requests');
+    for (const call of calls) {
+      assert.match(call, /^http:\/\/localhost:1234\//);
+      assert.doesNotMatch(call, /anthropic|sk-ant-/i);
+    }
+  });
+
   it('repairs pre-sales framing issues before polish with clean progress payloads', async () => {
-    await withEnv({ ANTHROPIC_API_KEY: '', RESUME_PDF_EXPORT: '0', RESUME_PAGE_VALIDATION: '0' }, async () => {
+    await withEnv({ CAREER_OPS_DISABLE_LM_STUDIO: '1', RESUME_PDF_EXPORT: '0', RESUME_PAGE_VALIDATION: '0' }, async () => {
       const state = finishState(`draft-critique-${Date.now()}`);
       state.planningContext = buildResumePlanningContext(
         'Senior Client Solutions Engineer owning pre-sales discovery, solution sizing, BOM review, cloud management, and security architecture.',
@@ -604,7 +670,7 @@ describe('DOCX-first resume finish', () => {
   });
 
   it('succeeds with a DOCX result when PDF export is disabled', async () => {
-    await withEnv({ ANTHROPIC_API_KEY: '', RESUME_PDF_EXPORT: '0', RESUME_PAGE_VALIDATION: '0' }, async () => {
+    await withEnv({ CAREER_OPS_DISABLE_LM_STUDIO: '1', RESUME_PDF_EXPORT: '0', RESUME_PAGE_VALIDATION: '0' }, async () => {
       const state = finishState(`docx-only-${Date.now()}`);
       const result = await generateResumeFinish(state);
 
@@ -621,7 +687,7 @@ describe('DOCX-first resume finish', () => {
 
   it('does not fail generation when PDF tools are missing', async () => {
     await withEnv({
-      ANTHROPIC_API_KEY: '',
+      CAREER_OPS_DISABLE_LM_STUDIO: '1',
       RESUME_PDF_EXPORT: '1',
       RESUME_PAGE_VALIDATION: '0',
       RESUME_SOFFICE_PATH: '/definitely/missing/soffice',
@@ -637,7 +703,7 @@ describe('DOCX-first resume finish', () => {
   });
 
   it('keeps the completion payload backward compatible', async () => {
-    await withEnv({ ANTHROPIC_API_KEY: '', RESUME_PDF_EXPORT: '0', RESUME_PAGE_VALIDATION: '0' }, async () => {
+    await withEnv({ CAREER_OPS_DISABLE_LM_STUDIO: '1', RESUME_PDF_EXPORT: '0', RESUME_PAGE_VALIDATION: '0' }, async () => {
       const state = finishState(`compat-${Date.now()}`);
       const result = await generateResumeFinish(state);
       const complete = state.io.events.find(({ event }) => event === 'complete');
@@ -1433,24 +1499,11 @@ describe('active resume prompts', () => {
     assert.match(text, /solution sizing/);
   });
 
-  it('defaults resume synthesis directly to Claude while preserving LM Studio rollback config', () => {
-    assert.match(source, /PREFER_CLAUDE_SYNTHESIS \?\? '1'/);
-    assert.match(source, /PREFER_CLAUDE_SYNTHESIS=1/);
-    assert.match(source, /claudeKeywordAnalysis/);
-    assert.match(source, /preferClaudePipeline\(\)/);
+  it('runs every resume AI step on local LM Studio with no Anthropic dependency', () => {
+    assert.doesNotMatch(source, /@anthropic-ai\/sdk|anthropic-cache|ANTHROPIC_API_KEY|CLAUDE_(?:SYNTHESIS|POLISH)_MODEL|preferClaudePipeline/);
+    assert.match(source, /const localAiClient = \{/);
     assert.match(source, /LM_STUDIO_SYNTHESIS_MODEL/);
-  });
-
-  it('marks the stable synthesis system prompt for Anthropic prompt caching by default', async () => {
-    const blocks = synthesisSystemBlocks();
-
-    assert.ok(Array.isArray(blocks));
-    assert.equal(blocks[0].type, 'text');
-    assert.deepEqual(blocks[0].cache_control, { type: 'ephemeral' });
-
-    await withEnv({ ANTHROPIC_PROMPT_CACHING: '0' }, async () => {
-      assert.equal(typeof synthesisSystemBlocks(), 'string');
-    });
+    assert.equal(typeof synthesisSystemBlocks(), 'string');
   });
 
   it('adds request-level Anthropic prompt caching by default', async () => {
