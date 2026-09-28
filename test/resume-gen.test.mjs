@@ -667,6 +667,28 @@ describe('page-fit bullet floor', () => {
 
     assert.equal(drop.field, 'JOB_1_BULLET_1', 'the redundant bullet should be dropped ahead of the distinct one');
   });
+
+  it('does not let a bullet that only duplicates a Key Achievement block itself from being dropped as "sole coverage"', () => {
+    // JOB_1_BULLET_2 near-duplicates KEY_ACHIEVEMENT_1 and is the only OTHER
+    // bullet mentioning the covered requirement — sole-coverage protection
+    // must recognize the Key Achievement already covers it too, so it
+    // doesn't wrongly protect the redundant bullet over the distinct one.
+    const planningContext = {
+      roleMode: 'customer-success',
+      requirements: [{ requirement: 'customer escalation management', source: 'jd', priority: 9 }],
+      evidenceMap: [{ requirement: 'customer escalation management', status: 'supported' }],
+    };
+    const replacements = {
+      KEY_ACHIEVEMENT_1: 'Owned customer escalations end to end, coordinating recovery planning across support and engineering.',
+      JOB_1_BULLET_2: 'Owned customer escalations end to end, coordinating recovery planning across support and engineering teams.',
+      JOB_1_BULLET_1: 'Drove 98% retention and $23M portfolio growth through structured account health reviews.',
+      JOB_5_BULLET_1: 'Supported day-to-day account activity without a specific metric.',
+    };
+
+    const drop = lowestPrioritySelectedBullet(replacements, planningContext);
+
+    assert.equal(drop.field, 'JOB_1_BULLET_2', 'the Key-Achievement-duplicate should be dropped, not wrongly protected as sole coverage');
+  });
 });
 
 describe('summary sentence repetition', () => {
@@ -1357,6 +1379,13 @@ describe('active resume prompts', () => {
     assert.equal(classifyResumeRole(jd), 'startup-cs-builder');
   });
 
+  it('does not classify an ordinary enterprise CSM JD as startup-cs-builder from "fast-paced" or "high-growth" alone', () => {
+    const fastPaced = 'Customer Success Manager. Manage a portfolio of enterprise accounts in a fast-paced environment. Lead executive business reviews and coordinate escalations.';
+    const highGrowth = 'Customer Success Manager at a high-growth enterprise SaaS company. Own renewal, expansion, and executive relationships across a named-account book of business.';
+    assert.notEqual(classifyResumeRole(fastPaced), 'startup-cs-builder');
+    assert.notEqual(classifyResumeRole(highGrowth), 'startup-cs-builder');
+  });
+
   it('detects Hakimo-style commercial startup CSM roles separately from cybersecurity builder roles', () => {
     const jd = [
       'Customer Success Manager at an AI-powered physical security startup.',
@@ -1719,6 +1748,16 @@ describe('active resume prompts', () => {
     const planningContext = { roleMode: 'customer-success', requirements: [] };
     const issues = critiqueResumeDraft({
       METRICS_LINE: '120% NRR',
+      KEY_ACHIEVEMENT_1: 'Managed a $23M ARR portfolio across 30 enterprise accounts.',
+    }, planningContext);
+
+    assert.ok(issues.some(issue => issue.code === 'weak-above-fold-proof' && issue.field === 'METRICS_LINE'));
+  });
+
+  it('still flags METRICS_LINE when a second pipe segment is not itself a metric', () => {
+    const planningContext = { roleMode: 'customer-success', requirements: [] };
+    const issues = critiqueResumeDraft({
+      METRICS_LINE: '120% NRR | Enterprise Cybersecurity SaaS',
       KEY_ACHIEVEMENT_1: 'Managed a $23M ARR portfolio across 30 enterprise accounts.',
     }, planningContext);
 
