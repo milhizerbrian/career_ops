@@ -112,6 +112,27 @@ describe('findUnsupportedFactualClaims (Phase 10 thank-you safety)', async () =>
     assert.ok(findUnsupportedFactualClaims('Palo Alto Networks renewals across a $23M portfolio.', facts).includes('Palo Alto Networks'));
   });
 
+  it('requires a number to match with its unit (22% does not support 22+ years)', () => {
+    const facts = ['Improved retention by 22%', 'Identified 14 expansion opportunities', 'Scaled from 8 to 17 direct reports'];
+    assert.ok(findUnsupportedFactualClaims('Brings 22+ years in customer success.', facts).includes('22+ years'));
+    assert.deepEqual(findUnsupportedFactualClaims('Identified 14 expansion opportunities and led 17 direct reports.', facts), []);
+    assert.ok(findUnsupportedFactualClaims('Managed 22 accounts.', facts).includes('22 accounts'));
+  });
+
+  it('binds a number to the words it describes (no recombining real numbers into new claims)', () => {
+    const facts = ['Maintained 98% Gross Revenue Retention across strategic enterprise accounts', 'Drove 120% Net Revenue Retention through expansion', 'Achieved a 100% renewal rate', 'Portfolio: $55M ARR'];
+    assert.ok(findUnsupportedFactualClaims('$23M ARR and 98% Net Revenue Retention.', facts).includes('98% net revenue retention'));
+    assert.deepEqual(findUnsupportedFactualClaims('Maintained 98% Gross Revenue Retention and 120% NRR.', facts), []);
+    assert.ok(findUnsupportedFactualClaims('Managed a $55M ARR portfolio with 100% retention.', facts).includes('100% retention'));
+    assert.deepEqual(findUnsupportedFactualClaims('Managed a $55M ARR portfolio with a 100% renewal rate.', facts), []);
+  });
+
+  it('requires job titles to match a real held title, not recombined words', () => {
+    const facts = ['ExtraHop, Customer Success Engineer (Strategic Accounts)', 'Network Security', 'Strategic Customer Success Manager'];
+    assert.ok(findUnsupportedFactualClaims('Security Engineer (Strategic Accounts)', facts, { strict: true }).length > 0);
+    assert.deepEqual(findUnsupportedFactualClaims('Enterprise Customer Success Engineer', facts.concat('Enterprise accounts'), { strict: true }), []);
+  });
+
   it('treats an empty support set as supporting nothing', () => {
     assert.ok(findUnsupportedFactualClaims('At Zenity I led 40 accounts.', []).length > 0);
   });

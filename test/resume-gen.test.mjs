@@ -29,6 +29,7 @@ import {
   lowestPrioritySelectedBullet,
   planningContextText,
   repairThinSummary,
+  extendSummaryWithEvidence,
   dedupeMetricsLine,
   ensureLocalModelContext,
   rescueQualityUntilStable,
@@ -286,60 +287,33 @@ describe('role section integrity repairs', () => {
 });
 
 describe('quality rescue', () => {
-  it('adds guaranteed proof and mechanism when a bullet still fails after model repair', () => {
+  // Deterministic repairs no longer append generic clauses to satisfy length
+  // or proof rules (that produced repeated filler); evidence enforcement
+  // replaces weak bullets with verified facts or omits them instead.
+  const FILLER_RE = /executive-ready operating rhythm|tying (?:daily )?execution to|using documented deployment criteria|across enterprise portfolios|across enterprise customer (?:environments|accounts)/i;
+
+  it('does not append generic filler to a weak bullet', () => {
     const repaired = applyDeterministicQualityRepairs({
-      JOB_3_BULLET_3: 'Coordinated deployment planning and aligned internal teams to resolve implementation issues before escalation.',
-    }, ['JOB_3_BULLET_3'], [
-      'JOB_3_BULLET_3: bullet lacks metric, enterprise scope, or stakeholder proof',
-      'JOB_3_BULLET_3: bullet reads like generic activity rather than differentiated impact',
+      JOB_1_BULLET_1: 'Managed customer relationships and supported implementation planning for accounts.',
+    }, ['JOB_1_BULLET_1'], [
+      'JOB_1_BULLET_1: bullet lacks metric, enterprise scope, or stakeholder proof',
+      'JOB_1_BULLET_1: recent/relevant bullet is too short (10 words, target 22-34)',
     ]);
-
-    assert.equal(validateResumeQuality(repaired, ['JOB_3_BULLET_3']), true);
-    assert.match(repaired.JOB_3_BULLET_3, /enterprise customer environments/);
-    assert.doesNotMatch(repaired.JOB_3_BULLET_3, /enterprise cybersecurity stakeholders/);
+    assert.doesNotMatch(repaired.JOB_1_BULLET_1, FILLER_RE);
   });
 
-  it('expands undersized role contexts locally before the quality gate reruns', () => {
+  it('does not pad short contexts or achievements', () => {
     const repaired = applyDeterministicQualityRepairs({
-      JOB_1_CONTEXT: 'ExtraHop $23M ARR portfolio with NDR platform advisory for enterprise stakeholders',
-    }, ['JOB_1_CONTEXT'], [
-      'JOB_1_CONTEXT: context is too short (11 words, expected 12+)',
-    ], 'pre-sales-solutions-architecture');
-
-    assert.match(repaired.JOB_1_CONTEXT, /across enterprise customer accounts/);
-    assert.equal(validateResumeQuality({
-      ...VALID_REPLACEMENTS,
-      JOB_1_CONTEXT: repaired.JOB_1_CONTEXT,
-    }, FIELDS), true);
-  });
-
-  it('keeps rescuing against fresh post-repair issues until the active fields pass', () => {
-    const rescued = rescueQualityUntilStable({
-      JOB_1_BULLET_2: 'Managed architecture workshops using discovery sessions for security teams.',
-    }, ['JOB_1_BULLET_2'], 'pre-sales-solutions-architecture');
-
-    assert.equal(validateResumeQuality(rescued, ['JOB_1_BULLET_2']), true);
-    assert.match(rescued.JOB_1_BULLET_2, /enterprise/i);
-  });
-
-  it('rescues unquantified key achievements with portfolio proof', () => {
-    const rescued = rescueQualityUntilStable({
-      KEY_ACHIEVEMENT_1: 'Improved onboarding discipline through better stakeholder alignment and repeatable customer success operating rhythms.',
-    }, ['KEY_ACHIEVEMENT_1']);
-
-    assert.equal(validateResumeQuality(rescued, ['KEY_ACHIEVEMENT_1']), true);
-    assert.match(rescued.KEY_ACHIEVEMENT_1, /enterprise portfolios/);
-  });
-
-  it('rescues copyable claims with workflow or governance proof', () => {
-    const rescued = rescueQualityUntilStable({
-      JOB_1_BULLET_1: 'Improved adoption across enterprise cybersecurity accounts by aligning CISO stakeholders and preserving 98% retention through executive engagement.',
-    }, ['JOB_1_BULLET_1']);
-
-    assert.equal(validateResumeQuality(rescued, ['JOB_1_BULLET_1']), true);
-    assert.match(rescued.JOB_1_BULLET_1, /workflow governance|operating cadence|account planning workflows/);
+      JOB_1_CONTEXT: 'Customer Success Engineer at ExtraHop.',
+      KEY_ACHIEVEMENT_1: 'Improved onboarding.',
+    }, ['JOB_1_CONTEXT', 'KEY_ACHIEVEMENT_1'], [
+      'JOB_1_CONTEXT: context is too short (6 words, expected 12+)',
+      'KEY_ACHIEVEMENT_1: achievement is too short (2 words, expected 14+)',
+    ]);
+    assert.doesNotMatch(`${repaired.JOB_1_CONTEXT} ${repaired.KEY_ACHIEVEMENT_1}`, FILLER_RE);
   });
 });
+
 
 describe('rendered resume layout', () => {
   it('requires both two pages and a materially full second page', () => {
@@ -359,14 +333,14 @@ describe('rendered resume layout', () => {
     }).status, 'overflow');
   });
 
-  it('keeps a valid bullet when removing overflow padding would make it fail quality', () => {
+  it('keeps a valid bullet unchanged when removing overflow text would make it fail quality', () => {
     const repaired = compactOverflowFields({
       JOB_3_BULLET_3: 'Built a framework, then handed the risk signal process to the broader CS team as a repeatable playbook, across enterprise cybersecurity stakeholders using documented deployment criteria and measurable security outcomes.',
     }, ['JOB_3_BULLET_3']);
 
+    // Stripping the clause would fail quality and no generic re-padding is
+    // added any more, so the valid bullet is kept unchanged.
     assert.equal(validateResumeQuality(repaired, ['JOB_3_BULLET_3']), true);
-    assert.doesNotMatch(repaired.JOB_3_BULLET_3, /enterprise cybersecurity stakeholders using documented deployment criteria/);
-    assert.match(repaired.JOB_3_BULLET_3, /enterprise customer environments|measurable customer outcomes/);
   });
 
   it('treats overly dense two-page renders as overflow to preserve Word pagination buffer', () => {
@@ -393,13 +367,14 @@ describe('rendered resume layout', () => {
     assert.match(repaired.JOB_1_BULLET_1, /98% retention|enterprise accounts/);
   });
 
-  it('routes underfilled dynamic resumes to content repair instead of failing', () => {
+  it('accepts an underfilled resume within 2 pages instead of padding it', () => {
     assert.equal(chooseDynamicPageFitAction({
       status: 'underfilled',
       pageCount: 2,
       secondPageFillRatio: 0.8248,
       renderedWords: 983,
-    }), 'content-repair');
+    }), 'accept');
+    assert.equal(chooseDynamicPageFitAction({ status: 'underfilled', pageCount: 1 }), 'accept');
 
     assert.equal(chooseDynamicPageFitAction({
       status: 'overflow',
@@ -606,6 +581,80 @@ describe('repairThinSummary (one targeted local repair)', () => {
     assert.equal(calls.length, 1);
   });
 
+  it('falls back to one verified evidence sentence when the local extension is rejected (no second call)', async () => {
+    const calls = [];
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = async (url) => {
+      calls.push(String(url));
+      return { ok: true, status: 200, json: async () => ({ choices: [{ message: { content: JSON.stringify({ SENTENCE: 'Built the program at Arms Cyber over 25 years.' }) } }] }), text: async () => '' };
+    };
+    try {
+      let out;
+      await withEnv({ CAREER_OPS_DISABLE_LM_STUDIO: undefined }, async () => {
+        out = await repairThinSummary({ PROFESSIONAL_SUMMARY: SHORT }, {
+          supportTexts: [TRUTH],
+          evidenceFallback: () => EXTRA,
+        });
+      });
+      assert.equal(out.PROFESSIONAL_SUMMARY, `${SHORT} ${EXTRA}`);
+      assert.equal(calls.length, 1);
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
+  it('for a thin 3-sentence summary, swaps the shortest sentence for one verified evidence sentence', async () => {
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = async () => ({ ok: true, status: 200, json: async () => ({ choices: [{ message: { content: '{}' } }] }), text: async () => '' });
+    const three = 'Customer success leader for enterprise cybersecurity accounts across NDR and SIEM platforms and renewals. Drives renewals and adoption. Leads enterprise alignment and renewal planning for security customers at enterprise scale.';
+    try {
+      let out;
+      await withEnv({ CAREER_OPS_DISABLE_LM_STUDIO: undefined }, async () => {
+        out = await repairThinSummary({ PROFESSIONAL_SUMMARY: three }, { supportTexts: [TRUTH], evidenceFallback: () => EXTRA });
+      });
+      assert.equal(out.PROFESSIONAL_SUMMARY, 'Customer success leader for enterprise cybersecurity accounts across NDR and SIEM platforms and renewals. ' + EXTRA + ' Leads enterprise alignment and renewal planning for security customers at enterprise scale.');
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
+  it('fills a very thin 1-sentence summary with up to two verified sentences (max 3 total)', async () => {
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = async () => ({ ok: true, status: 200, json: async () => ({ choices: [{ message: { content: '{}' } }] }), text: async () => '' });
+    const one = 'Customer success leader for enterprise cybersecurity accounts.';
+    const second = 'Led ExtraHop NDR and Securonix SIEM enterprise renewals across a $23M ARR portfolio for enterprise customers.';
+    try {
+      let out;
+      await withEnv({ CAREER_OPS_DISABLE_LM_STUDIO: undefined }, async () => {
+        out = await repairThinSummary({ PROFESSIONAL_SUMMARY: one }, { supportTexts: [TRUTH], evidenceFallback: () => [EXTRA, second] });
+      });
+      assert.equal(out.PROFESSIONAL_SUMMARY, `${one} ${EXTRA} ${second}`);
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
+  it('picks the highest-ranked verified sentences that actually reach the floor', () => {
+    const one = 'Customer success leader for enterprise cybersecurity accounts.';
+    const tiny = 'Ran QBRs.';
+    const second = 'Led ExtraHop NDR and Securonix SIEM enterprise renewals across a $23M ARR portfolio for enterprise customers.';
+    const out = extendSummaryWithEvidence({ PROFESSIONAL_SUMMARY: one }, { supportTexts: [TRUTH, tiny], evidenceFallback: () => [tiny, EXTRA, second] });
+    assert.equal(out.PROFESSIONAL_SUMMARY, `${one} ${EXTRA} ${second}`);
+  });
+
+  it('rebuilds an emptied or unfixable summary entirely from verified sentences', () => {
+    const second = 'Led ExtraHop NDR and Securonix SIEM enterprise renewals across a $23M ARR portfolio for enterprise customers.';
+    const third = 'Ran executive business reviews with CISO stakeholders at Securonix for enterprise customers across NDR and SIEM platforms.';
+    const expected = `${EXTRA} ${second} ${third}`;
+    const empty = extendSummaryWithEvidence({ PROFESSIONAL_SUMMARY: '' }, { supportTexts: [TRUTH], evidenceFallback: () => [EXTRA, second, third] });
+    assert.equal(empty.PROFESSIONAL_SUMMARY, expected);
+    const twoShort = extendSummaryWithEvidence(
+      { PROFESSIONAL_SUMMARY: 'Customer success leader. Drives renewals.' },
+      { supportTexts: [TRUTH], evidenceFallback: () => [EXTRA, second, third] },
+    );
+    assert.equal(twoShort.PROFESSIONAL_SUMMARY, expected);
+  });
+
   it('does nothing when the summary already meets 45 words or LM Studio is disabled', async () => {
     assert.equal((await run(GOOD, '{}')).calls.length, 0);
     const disabled = await run(SHORT, '{}', { CAREER_OPS_DISABLE_LM_STUDIO: '1' });
@@ -679,12 +728,18 @@ describe('structured model output becomes resume text', () => {
     assert.throws(() => validateResumeQuality({ CORE_COMPETENCIES: '[object Object]' }, ['CORE_COMPETENCIES']), /object/i);
   });
 
+  it('collapses immediately repeated words and parentheticals', () => {
+    assert.equal(sanitizeResumeLanguage('$55M ARR Portfolio (Peak) (Peak)'), '$55M ARR Portfolio (Peak)');
+    assert.equal(sanitizeResumeLanguage('Led the the renewal'), 'Led the renewal');
+  });
+
   it('drops a repeated METRICS_LINE segment', () => {
     assert.equal(
       dedupeMetricsLine('$23M ARR, 98% GRR, 120% NRR | $55M ARR Portfolio (Peak) | 120% NRR'),
       '$23M ARR, 98% GRR, 120% NRR | $55M ARR Portfolio (Peak)',
     );
     assert.equal(dedupeMetricsLine('$13M renewal | 98% GRR'), '$13M renewal | 98% GRR');
+    assert.equal(dedupeMetricsLine('$55M ARR Portfolio (Peak) | 120% NRR | Net Revenue Retention: 120%'), '$55M ARR Portfolio (Peak) | 120% NRR');
   });
 });
 
@@ -723,26 +778,16 @@ describe('gap questions already answered', () => {
 });
 
 describe('DOCX-first resume finish', () => {
-  it('repairs weak generated bullets before failing the quality gate', async () => {
-    await withEnv({ CAREER_OPS_DISABLE_LM_STUDIO: '1', RESUME_PDF_EXPORT: '0', RESUME_PAGE_VALIDATION: '0' }, async () => {
+  it('fails the quality gate on a weak bullet instead of padding it with filler', async () => {
+    await withEnv({ CAREER_OPS_DISABLE_LM_STUDIO: '1', CANDIDATE_EVIDENCE_MODE: 'off', RESUME_PDF_EXPORT: '0', RESUME_PAGE_VALIDATION: '0' }, async () => {
       const state = finishState(`quality-repair-${Date.now()}`);
-      state.fields = [
-        'PROFESSIONAL_SUMMARY',
-        'KEY_ACHIEVEMENT_1',
-        'JOB_1_CONTEXT',
-        'JOB_1_BULLET_1',
-        'JOB_2_BULLET_3',
-      ];
+      state.fields = ['PROFESSIONAL_SUMMARY', 'KEY_ACHIEVEMENT_1', 'JOB_1_CONTEXT', 'JOB_1_BULLET_1', 'JOB_2_BULLET_3'];
       state.replacements = {
         ...VALID_REPLACEMENTS,
         JOB_2_BULLET_3: 'Managed customer relationships and supported implementation planning for accounts.',
       };
-
-      const result = await generateResumeFinish(state);
-
-      assert.ok(result.docxUrl.endsWith('.docx'));
+      await assert.rejects(generateResumeFinish(state), /JOB_2_BULLET_3: bullet is too short/);
       assert.match(state.io.events.map(event => event.payload?.stage).join('\n'), /quality-repair/);
-      assert.ok(state.io.events.every(event => !Object.hasOwn(event.payload || {}, '0')));
     });
   });
 
@@ -755,6 +800,7 @@ describe('DOCX-first resume finish', () => {
     };
     try {
       await withEnv({
+        CANDIDATE_EVIDENCE_MODE: 'off', // this test is about request routing
         ANTHROPIC_API_KEY: 'sk-ant-test-key-should-never-be-used',
         CAREER_OPS_DISABLE_LM_STUDIO: undefined,
         RESUME_PDF_EXPORT: '0',
@@ -779,7 +825,7 @@ describe('DOCX-first resume finish', () => {
   });
 
   it('repairs pre-sales framing issues before polish with clean progress payloads', async () => {
-    await withEnv({ CAREER_OPS_DISABLE_LM_STUDIO: '1', RESUME_PDF_EXPORT: '0', RESUME_PAGE_VALIDATION: '0' }, async () => {
+    await withEnv({ CAREER_OPS_DISABLE_LM_STUDIO: '1', CANDIDATE_EVIDENCE_MODE: 'off', RESUME_PDF_EXPORT: '0', RESUME_PAGE_VALIDATION: '0' }, async () => {
       const state = finishState(`draft-critique-${Date.now()}`);
       state.planningContext = buildResumePlanningContext(
         'Senior Client Solutions Engineer owning pre-sales discovery, solution sizing, BOM review, cloud management, and security architecture.',
@@ -807,7 +853,7 @@ describe('DOCX-first resume finish', () => {
   });
 
   it('succeeds with a DOCX result when PDF export is disabled', async () => {
-    await withEnv({ CAREER_OPS_DISABLE_LM_STUDIO: '1', RESUME_PDF_EXPORT: '0', RESUME_PAGE_VALIDATION: '0' }, async () => {
+    await withEnv({ CAREER_OPS_DISABLE_LM_STUDIO: '1', CANDIDATE_EVIDENCE_MODE: 'off', RESUME_PDF_EXPORT: '0', RESUME_PAGE_VALIDATION: '0' }, async () => {
       const state = finishState(`docx-only-${Date.now()}`);
       const result = await generateResumeFinish(state);
 
@@ -825,6 +871,7 @@ describe('DOCX-first resume finish', () => {
   it('does not fail generation when PDF tools are missing', async () => {
     await withEnv({
       CAREER_OPS_DISABLE_LM_STUDIO: '1',
+      CANDIDATE_EVIDENCE_MODE: 'off',
       RESUME_PDF_EXPORT: '1',
       RESUME_PAGE_VALIDATION: '0',
       RESUME_SOFFICE_PATH: '/definitely/missing/soffice',
@@ -840,7 +887,7 @@ describe('DOCX-first resume finish', () => {
   });
 
   it('keeps the completion payload backward compatible', async () => {
-    await withEnv({ CAREER_OPS_DISABLE_LM_STUDIO: '1', RESUME_PDF_EXPORT: '0', RESUME_PAGE_VALIDATION: '0' }, async () => {
+    await withEnv({ CAREER_OPS_DISABLE_LM_STUDIO: '1', CANDIDATE_EVIDENCE_MODE: 'off', RESUME_PDF_EXPORT: '0', RESUME_PAGE_VALIDATION: '0' }, async () => {
       const state = finishState(`compat-${Date.now()}`);
       const result = await generateResumeFinish(state);
       const complete = state.io.events.find(({ event }) => event === 'complete');
@@ -1454,7 +1501,7 @@ describe('active resume prompts', () => {
     assert.equal(drop.field, 'JOB_1_BULLET_1');
   });
 
-  it('uses business-outcome repairs for strategic CS leadership bullets', () => {
+  it('does not pad strategic CS leadership bullets with generic business-outcome clauses', () => {
     const repaired = applyDeterministicQualityRepairs({
       JOB_1_BULLET_1: 'Advised stakeholders on program execution.',
     }, ['JOB_1_BULLET_1'], [
@@ -1462,8 +1509,8 @@ describe('active resume prompts', () => {
       'JOB_1_BULLET_1: bullet reads like generic activity rather than differentiated impact',
     ], 'strategic-cs-leadership');
 
-    assert.match(repaired.JOB_1_BULLET_1, /measurable business outcomes/);
-    assert.doesNotMatch(repaired.JOB_1_BULLET_1, /enterprise cybersecurity stakeholders/);
+    // No generic clause is appended (filler); evidence enforcement handles weak bullets.
+    assert.doesNotMatch(repaired.JOB_1_BULLET_1, /measurable business outcomes|enterprise cybersecurity stakeholders/);
   });
 
   it('applies deterministic Nebulock-style startup CSM repairs', () => {

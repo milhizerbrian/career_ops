@@ -77,19 +77,21 @@ describe('evidenceValidationMode', () => {
     else process.env.CANDIDATE_EVIDENCE_MODE = prev;
   });
 
-  it('defaults to off when unset', async () => {
+  it('defaults to block when unset', async () => {
     delete process.env.CANDIDATE_EVIDENCE_MODE;
     const mod = await import(`../lib/candidate-data.mjs?t=${Date.now()}-${Math.random()}`);
-    assert.equal(mod.evidenceValidationMode(), 'off');
+    assert.equal(mod.evidenceValidationMode(), 'block');
   });
 
-  it('accepts warn and block, and falls back to off for unknown values', async () => {
+  it('accepts off, warn, and block, and falls back to block for unknown values', async () => {
     const mod = await import(`../lib/candidate-data.mjs?t=${Date.now()}-${Math.random()}`);
     process.env.CANDIDATE_EVIDENCE_MODE = 'warn';
     assert.equal(mod.evidenceValidationMode(), 'warn');
     process.env.CANDIDATE_EVIDENCE_MODE = 'block';
     assert.equal(mod.evidenceValidationMode(), 'block');
-    process.env.CANDIDATE_EVIDENCE_MODE = 'nonsense';
+    process.env.CANDIDATE_EVIDENCE_MODE = 'off';
     assert.equal(mod.evidenceValidationMode(), 'off');
+    process.env.CANDIDATE_EVIDENCE_MODE = 'nonsense';
+    assert.equal(mod.evidenceValidationMode(), 'block');
   });
 });
